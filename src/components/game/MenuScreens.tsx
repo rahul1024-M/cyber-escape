@@ -82,65 +82,304 @@ export function MenuScreen() {
     cyberRangeProgress,
     openCyberRange,
   } = useGame();
+
   const [panel, setPanel] = useState<Panel>(null);
   const closePanel = useCallback(() => setPanel(null), []);
-  const anyDone = Object.values(player.levels).some((l) => l.completed);
-  const open = (p: Panel) => {
+
+  const anyDone = Object.values(player.levels).some((level) => level.completed);
+  const completedSectors = Object.values(player.levels).filter(
+    (level) => level.completed,
+  ).length;
+
+  const open = (nextPanel: Panel) => {
     sfx("click");
-    setPanel(p);
+    setPanel(nextPanel);
   };
+
+  const menuItems = [
+    {
+      label: "HOW TO PLAY",
+      detail: "Learn the controls",
+      icon: Icons.BookOpen,
+      action: () => open("how"),
+    },
+    {
+      label: "BADGES",
+      detail: "Your achievements",
+      icon: Icons.Award,
+      action: () => open("achievements"),
+    },
+    {
+      label: "LEADERBOARD",
+      detail: "Rank the operatives",
+      icon: Icons.Trophy,
+      action: () => open("board"),
+    },
+    {
+      label: "THEMES",
+      detail: "Customize your interface",
+      icon: Icons.Palette,
+      action: () => open("shop"),
+    },
+    {
+      label: "PROFILE",
+      detail: "Your operative record",
+      icon: Icons.UserRound,
+      action: () => open("profile"),
+    },
+    {
+      label: "SETTINGS",
+      detail: "Configure your system",
+      icon: Icons.Settings2,
+      action: () => open("settings"),
+    },
+  ];
+
   return (
-    <div className="mx-auto flex min-h-[calc(100vh-48px)] max-w-3xl flex-col items-center justify-center p-6 text-center">
-      <p className="font-mono text-xs tracking-[0.4em] text-accent anim-flicker">
-        NEXUS // INTRUSION SHELL
-      </p>
-      <h1 className="my-4 font-display text-5xl text-primary text-glow sm:text-7xl">
-        CYBER ESCAPE
-      </h1>
-      <p className="mb-10 max-w-lg text-lg text-muted-foreground">
-        Welcome back, <span className="text-foreground">{player.name}</span>. The firewall is
-        waiting.
-      </p>
-      <div className="grid w-full max-w-sm gap-3">
-        {hasSave && anyDone ? (
-          <Btn onClick={continueGame}>CONTINUE</Btn>
-        ) : (
-          <Btn onClick={startNewGame}>START MISSION</Btn>
-        )}
-        <Btn variant="ghost" onClick={() => go("levels")}>
-          SECTOR MAP
-        </Btn>
-        {isEnabled("ENABLE_CYBER_RANGE") && (
-          <Btn variant="ghost" onClick={openCyberRange}>
-            CYBER RANGE · {Object.keys(cyberRangeProgress.completions).length}/4
-          </Btn>
-        )}
-        <div className="grid grid-cols-2 gap-3">
-          <Btn variant="ghost" onClick={() => open("how")}>
-            HOW TO PLAY
-          </Btn>
-          <Btn variant="ghost" onClick={() => open("achievements")}>
-            BADGES
-          </Btn>
-          <Btn variant="ghost" onClick={() => open("board")}>
-            LEADERBOARD
-          </Btn>
-          <Btn variant="ghost" onClick={() => open("shop")}>
-            THEMES
-          </Btn>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Btn variant="ghost" onClick={() => open("profile")}>
-            PROFILE
-          </Btn>
-          <Btn variant="ghost" onClick={() => open("settings")}>
-            SETTINGS
-          </Btn>
-        </div>
-        <Btn variant="ghost" onClick={() => open("account")}>
-          {user ? "ACCOUNT · CLOUD SAVE" : "SIGN IN (OPTIONAL)"}
-        </Btn>
+    <main className="relative mx-auto flex min-h-[calc(100vh-48px)] w-full max-w-6xl flex-col justify-center overflow-hidden px-4 py-8 sm:px-8 lg:px-10">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute left-1/2 top-1/2 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/[0.07] blur-3xl"
+      />
+
+      <div className="relative grid items-center gap-10 lg:grid-cols-[1.15fr_0.85fr] lg:gap-14">
+        {/* Branding and welcome */}
+        <section className="text-center lg:text-left">
+          <div className="mb-6 inline-flex items-center gap-3 rounded-full border border-primary/25 bg-primary/[0.06] px-4 py-2 font-mono text-[10px] tracking-[0.25em] text-primary sm:text-xs">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+            </span>
+            NEXUS SYSTEM // ONLINE
+          </div>
+
+          <p className="mb-3 font-mono text-xs tracking-[0.35em] text-muted-foreground">
+            YOUR MISSION BEGINS HERE
+          </p>
+
+          <h1 className="font-display text-5xl font-bold leading-[1.05] tracking-tight text-primary text-glow sm:text-7xl lg:text-8xl">
+            CYBER
+            <span className="block text-foreground">
+              ESCAPE<span className="text-primary">.</span>
+            </span>
+          </h1>
+
+          <p className="mx-auto mt-6 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg lg:mx-0">
+            Welcome back,{" "}
+            <span className="font-semibold text-foreground">{player.name}</span>.
+            {" "}The network is compromised. Five sectors stand between you and freedom.
+          </p>
+
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3 lg:justify-start">
+            <span className="inline-flex items-center gap-2 rounded-md border border-border/70 bg-card/50 px-3 py-2 font-mono text-xs text-muted-foreground">
+              <Icons.ShieldCheck className="h-4 w-4 text-primary" />
+              SECURITY PROTOCOL ACTIVE
+            </span>
+
+            <span className="inline-flex items-center gap-2 rounded-md border border-border/70 bg-card/50 px-3 py-2 font-mono text-xs text-muted-foreground">
+              <Icons.Crosshair className="h-4 w-4 text-accent" />
+              OPERATIVE: {player.name}
+            </span>
+          </div>
+        </section>
+
+        {/* Mission control */}
+        <section className="panel glow-border relative mx-auto w-full max-w-xl overflow-hidden p-5 sm:p-7">
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary to-transparent" />
+
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="font-mono text-[10px] tracking-[0.3em] text-primary">
+                NEXUS // COMMAND
+              </p>
+              <h2 className="mt-2 font-display text-2xl text-foreground sm:text-3xl">
+                Mission Control
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Ready when you are, operative.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-primary/20 bg-primary/[0.07] p-3 text-primary">
+              <Icons.Radar className="h-7 w-7" />
+            </div>
+          </div>
+
+          {/* Live progress statistics */}
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-border/70 bg-background/50 p-4">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Icons.Layers3 className="h-4 w-4 text-primary" />
+                <span className="font-mono text-[10px] tracking-wider">
+                  SECTORS
+                </span>
+              </div>
+
+              <p className="mt-3 font-display text-3xl text-foreground">
+                {completedSectors}
+                <span className="text-lg text-muted-foreground"> / 5</span>
+              </p>
+
+              <div
+                className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted"
+                role="progressbar"
+                aria-label="Completed sectors"
+                aria-valuemin={0}
+                aria-valuemax={5}
+                aria-valuenow={Math.min(completedSectors, 5)}
+              >
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{
+                    width: `${Math.min(completedSectors / 5, 1) * 100}%`,
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border/70 bg-background/50 p-4">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Icons.Zap className="h-4 w-4 text-accent" />
+                <span className="font-mono text-[10px] tracking-wider">
+                  STATUS
+                </span>
+              </div>
+
+              <p className="mt-3 font-display text-xl text-foreground">
+                {completedSectors === 5
+                  ? "ELITE"
+                  : completedSectors > 0
+                    ? "ACTIVE"
+                    : "READY"}
+              </p>
+
+              <p className="mt-2 text-xs text-muted-foreground">
+                {completedSectors === 5
+                  ? "All sectors completed"
+                  : `${5 - Math.min(completedSectors, 5)} sectors remaining`}
+              </p>
+            </div>
+          </div>
+
+          {/* Main actions */}
+          <div className="mt-6 space-y-3">
+            <button
+              type="button"
+              onClick={() => {
+                sfx("click");
+                if (hasSave && anyDone) {
+                  continueGame();
+                } else {
+                  startNewGame();
+                }
+              }}
+              className="group flex min-h-14 w-full items-center justify-between gap-4 rounded-lg border border-primary/50 bg-primary px-5 py-4 text-left font-mono text-sm font-bold tracking-[0.12em] text-primary-foreground shadow-[0_0_28px_-8px_var(--primary)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_0_38px_-5px_var(--primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+            >
+              <span className="flex items-center gap-3">
+                <Icons.Play className="h-5 w-5" />
+                {hasSave && anyDone ? "CONTINUE MISSION" : "START MISSION"}
+              </span>
+
+              <Icons.ArrowUpRight className="h-5 w-5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                sfx("click");
+                go("levels");
+              }}
+              className="flex min-h-12 w-full items-center justify-between rounded-lg border border-border bg-background/40 px-5 py-3 font-mono text-xs tracking-[0.12em] text-foreground transition-all hover:border-primary/50 hover:bg-primary/[0.05] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+            >
+              <span className="flex items-center gap-3">
+                <Icons.Map className="h-4 w-4 text-primary" />
+                SECTOR MAP
+              </span>
+              <Icons.ChevronRight className="h-4 w-4 text-muted-foreground" />
+            </button>
+
+            {isEnabled("ENABLE_CYBER_RANGE") && (
+              <button
+                type="button"
+                onClick={() => {
+                  sfx("click");
+                  openCyberRange();
+                }}
+                className="flex min-h-12 w-full items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/[0.05] px-5 py-3 font-mono text-xs tracking-[0.12em] text-foreground transition-all hover:border-emerald-400/60 hover:bg-emerald-500/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+              >
+                <span className="flex items-center gap-3">
+                  <Icons.Terminal className="h-4 w-4 text-emerald-400" />
+                  CYBER RANGE
+                </span>
+
+                <span className="text-emerald-400">
+                  {Object.keys(cyberRangeProgress.completions).length}/4
+                </span>
+              </button>
+            )}
+          </div>
+
+          {/* Secondary menu cards */}
+          <div className="mt-7 border-t border-border/70 pt-5">
+            <p className="mb-3 font-mono text-[10px] tracking-[0.25em] text-muted-foreground">
+              OPERATIVE TOOLS
+            </p>
+
+            <div className="grid grid-cols-2 gap-3">
+              {menuItems.map((item) => {
+                const Icon = item.icon;
+
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={item.action}
+                    className="group flex min-h-[76px] items-center gap-3 rounded-lg border border-border/70 bg-background/30 p-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/[0.05] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:p-4"
+                  >
+                    <span className="rounded-md border border-border bg-card/70 p-2 text-muted-foreground transition-colors group-hover:border-primary/30 group-hover:text-primary">
+                      <Icon className="h-4 w-4" />
+                    </span>
+
+                    <span className="min-w-0">
+                      <span className="block font-mono text-[10px] font-bold tracking-wider text-foreground sm:text-xs">
+                        {item.label}
+                      </span>
+                      <span className="mt-1 block text-[10px] leading-4 text-muted-foreground">
+                        {item.detail}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => open("account")}
+              className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-border/70 bg-background/30 px-4 py-3 font-mono text-[10px] tracking-[0.15em] text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:text-xs"
+            >
+              {user ? (
+                <>
+                  <Icons.Cloud className="h-4 w-4" />
+                  ACCOUNT · CLOUD SAVE
+                </>
+              ) : (
+                <>
+                  <Icons.LogIn className="h-4 w-4" />
+                  SIGN IN · OPTIONAL
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="mt-5 flex items-center justify-between gap-3 border-t border-border/50 pt-4 font-mono text-[9px] tracking-wider text-muted-foreground">
+            <span>SYS.STATUS: NOMINAL</span>
+            <span>BUILD // NEXUS-01</span>
+          </div>
+        </section>
       </div>
+
+      {/* Existing functional panels are preserved */}
       {panel && (
         <Modal title={titles[panel]} onClose={closePanel}>
           {panel === "how" && <HowTo />}
@@ -152,7 +391,7 @@ export function MenuScreen() {
           {panel === "account" && <AccountPanel />}
         </Modal>
       )}
-    </div>
+    </main>
   );
 }
 

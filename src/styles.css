@@ -348,3 +348,172 @@
     transition-duration: 0.01ms !important;
   }
 }
+/* ==========================================================
+   CYBER ESCAPE — PREMIUM VISUAL POLISH
+   Additive styles only: preserves existing game mechanics.
+   ========================================================== */
+
+:root {
+  --ce-glass: rgb(10 18 34 / 78%);
+  --ce-glass-strong: rgb(8 15 29 / 94%);
+  --ce-line: rgb(105 220 255 / 20%);
+  --ce-line-bright: rgb(105 220 255 / 42%);
+  --ce-shadow: 0 24px 70px rgb(0 0 0 / 30%);
+}
+
+html {
+  scroll-behavior: smooth;
+  color-scheme: dark;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  color: var(--color-primary-foreground);
+  background: var(--color-primary);
+}
+
+/* Subtle atmospheric background without blocking interaction. */
+.grid-bg {
+  background-image:
+    radial-gradient(
+      ellipse at 50% -15%,
+      color-mix(in oklab, var(--primary) 13%, transparent),
+      transparent 60%
+    ),
+    linear-gradient(
+      to right,
+      color-mix(in oklab, var(--primary) 5%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--primary) 5%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: auto, 42px 42px, 42px 42px;
+  background-position: center top, center top, center top;
+}
+
+/* Cleaner glass panels. */
+.panel {
+  border-color: var(--ce-line);
+  border-radius: 12px;
+  background: linear-gradient(
+    145deg,
+    rgb(18 31 52 / 88%),
+    var(--ce-glass)
+  );
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 3%),
+    0 14px 42px rgb(0 0 0 / 18%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.glow-border {
+  border-color: var(--ce-line-bright);
+  box-shadow:
+    0 0 0 1px rgb(105 220 255 / 5%),
+    0 0 24px -12px var(--glow),
+    inset 0 0 24px -18px var(--primary);
+}
+
+/* Consistent, readable headings. */
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+h1 {
+  line-height: 1.12;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+/* Refined interactive controls. */
+button,
+[role="button"],
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button:not(:disabled):hover {
+    border-color: var(--ce-line-bright);
+  }
+
+  a:hover {
+    text-decoration-color: var(--primary);
+  }
+
+  .panel:hover {
+    border-color: color-mix(
+      in oklab,
+      var(--primary) 32%,
+      var(--border)
+    );
+  }
+}
+
+/* Keyboard focus remains clear and accessible. */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 4px;
+}
+
+/* More comfortable small-screen spacing. */
+@media (max-width: 640px) {
+  .grid-bg {
+    background-size: auto, 30px 30px, 30px 30px;
+  }
+
+  .panel {
+    border-radius: 10px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  h1 {
+    letter-spacing: 0.015em;
+  }
+}
+
+/* Respect the player's motion preferences. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
