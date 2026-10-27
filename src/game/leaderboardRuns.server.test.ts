@@ -202,4 +202,24 @@ describe("leaderboard server authorization", () => {
     );
     logError.mockRestore();
   });
+  it("rejects level IDs outside the supported range", async () => {
+  authenticateAs("user-a");
+
+  for (const levelId of [0, 7, -1, 1.5]) {
+    await expect(
+      recordLeaderboardAttempt({
+        runId,
+        version: 0,
+        levelId,
+        challengeIndex: 0,
+        value: "verify",
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      error: "invalid_request",
+    });
+  }
+
+  expect(adminMock.from).not.toHaveBeenCalled();
+});
 });
