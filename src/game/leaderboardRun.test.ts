@@ -281,10 +281,13 @@ describe("server leaderboard run scoring", () => {
     const finalLevel = LEVELS.at(-1)!;
     const challengeIndex = finalLevel.challenges.length - 1;
     const challenge = finalLevel.challenges[challengeIndex]!;
-    const value = challenge
-      .configOptions!.filter((option) => option.secure)
-      .map((option) => option.id)
-      .join("|");
+    const value =
+  challenge.type === "config"
+    ? challenge.configOptions!
+        .filter((option) => option.secure)
+        .map((option) => option.id)
+        .join("|")
+    : challenge.correctAnswer ?? challenge.accepted?.[0] ?? "";
     const run = {
       ...activeRun(),
       level_id: finalLevel.id,

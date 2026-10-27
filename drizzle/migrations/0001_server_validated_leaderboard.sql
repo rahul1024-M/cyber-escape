@@ -5,7 +5,7 @@ CREATE TABLE public.leaderboard_runs (
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   status text NOT NULL DEFAULT 'active'
     CHECK (status IN ('active', 'failed', 'completed', 'submitted', 'abandoned', 'expired')),
-  level_id integer NOT NULL DEFAULT 1 CHECK (level_id BETWEEN 1 AND 5),
+  level_id integer NOT NULL DEFAULT 1 CHECK (level_id BETWEEN 1 AND 6),
   challenge_index integer NOT NULL DEFAULT 0 CHECK (challenge_index >= 0),
   score integer NOT NULL DEFAULT 0 CHECK (score BETWEEN 0 AND 20000),
   correct_count integer NOT NULL DEFAULT 0 CHECK (correct_count >= 0),

@@ -1,6 +1,7 @@
 import type { Level } from "./types";
 import { NETWORK_PATH_PUZZLES } from "./networkPathPuzzles";
 import { NEXUS_CHALLENGES } from "./nexusEncounter";
+import { title } from "process";
 
 export const XP_THRESHOLDS = [100, 250, 450, 700, 1000];
 
@@ -553,7 +554,114 @@ export const LEVELS: Level[] = [
     coinReward: 200,
     challenges: NEXUS_CHALLENGES,
   },
+  {
+    id: 6,
+    code: "06",
+    title: "THREAT HUNTER",
+    tagline: "Investigate. Verify. Contain.",
+    description:
+      "Investigate suspicious activity, identify malicious links, and choose a safe incident response.",
+    difficulty: "EXPERT",
+    xpReward: 300,
+    coinReward: 150,
+    challenges: [
+      {
+        id: "threat-login",
+        levelId: 6,
+        type: "mcq",
+        title: "Suspicious Login",
+        description: "An account logs in from an unfamiliar location.",
+        question: "What is the safest first response?",
+        options: [
+          {
+            id: "ignore",
+            label: "Ignore the alert",
+            sub: "Assume it is normal activity",
+          },
+          {
+            id: "verify",
+            label: "Verify the activity",
+            sub: "Check trusted security logs and contact the account owner",
+          },
+          {
+            id: "delete",
+            label: "Delete the account immediately",
+            sub: "Act without investigating",
+          },
+        ],
+        correctAnswer: "verify",
+        explanation:
+          "Verify the alert using trusted logs and the account owner before taking proportionate containment steps.",
+        hint: "Investigate before making a major account change.",
+        xpReward: 100,
+        coinReward: 50,
+      },
+      {
+        id: "threat-url",
+        levelId: 6,
+        type: "mcq",
+        title: "Malicious Link",
+        description: "A message claims your account will be closed today.",
+        question: "Which action is safest?",
+        options: [
+          {
+            id: "click",
+            label: "Click the link",
+            sub: "Check whether the warning is real",
+          },
+          {
+            id: "reply",
+            label: "Reply with your password",
+            sub: "Ask the sender for confirmation",
+          },
+          {
+            id: "official",
+            label: "Open the official site directly",
+            sub: "Verify the warning through a trusted channel",
+          },
+        ],
+        correctAnswer: "official",
+        explanation:
+          "Urgency is a common phishing tactic. Avoid the message link and verify through the official website or a trusted contact.",
+        hint: "Never trust a link just because the message sounds urgent.",
+        xpReward: 100,
+        coinReward: 50,
+      },
+      {
+        id: "threat-containment",
+        levelId: 6,
+        type: "mcq",
+        title: "Incident Response",
+        description: "A workstation appears to be infected with malware.",
+        question: "What is the most appropriate next step?",
+        options: [
+          {
+            id: "hide",
+            label: "Hide the alert",
+            sub: "Avoid reporting the incident",
+          },
+          {
+            id: "isolate",
+            label: "Isolate and report",
+            sub: "Follow the organization's incident-response procedure",
+          },
+          {
+            id: "share",
+            label: "Copy files to another computer",
+            sub: "Move potentially infected files",
+          },
+        ],
+        correctAnswer: "isolate",
+        explanation:
+          "Follow the incident-response procedure, isolate the affected device when appropriate, and notify the security team.",
+        hint: "Contain the suspected infection and report it.",
+        xpReward: 100,
+        coinReward: 50,
+      },
+    ],
+  },
 ];
+
 
 export const getLevel = (id: number) => LEVELS.find((l) => l.id === id);
 export const TOTAL_CHALLENGES = LEVELS.reduce(

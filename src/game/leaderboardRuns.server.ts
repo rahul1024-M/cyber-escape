@@ -8,7 +8,7 @@ const attemptSchema = z
   .object({
     runId: z.string().uuid(),
     version: z.number().int().nonnegative(),
-    levelId: z.number().int().min(1).max(5),
+    levelId: z.number().int().min(1).max(6),
     challengeIndex: z.number().int().nonnegative(),
     value: z.string().max(4096),
     evidenceBoardState: z
@@ -34,7 +34,7 @@ const advanceSchema = z
   .object({
     runId: z.string().uuid(),
     version: z.number().int().nonnegative(),
-    levelId: z.number().int().min(1).max(5),
+    levelId: z.number().int().min(1).max(6),
     challengeIndex: z.number().int().nonnegative(),
   })
   .strict();
@@ -91,7 +91,7 @@ export async function beginLeaderboardLevel(input: {
     !validateRunId(input.runId) ||
     !Number.isInteger(input.levelId) ||
     input.levelId < 1 ||
-    input.levelId > 5
+    input.levelId > 6
   ) {
     return { ok: false, error: "invalid_request" };
   }
