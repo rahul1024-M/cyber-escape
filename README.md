@@ -78,3 +78,4 @@ external service and production checks are not established by the local build.
 - TypeScript
 - React
 - Tailwind CSS
+Supabase deployment is connected to the main branch.
