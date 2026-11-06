@@ -51,7 +51,7 @@ export function PlayScreen() {
   };
 
   return (
-    <div key={shake} className={cn("mx-auto max-w-3xl p-4 sm:p-6", shake > 0 && "anim-shake")}>
+    <div key={shake} className={cn("mx-auto max-w-3xl p-3 sm:p-6", shake > 0 && "anim-shake")}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2 font-mono text-xs text-muted-foreground">
         <button
           onClick={() => go("levels")}
@@ -79,7 +79,7 @@ export function PlayScreen() {
 
       <section
         className={cn(
-          "panel anim-rise p-4 sm:p-6",
+          "panel anim-rise p-3 sm:p-6",
           boss ? "border-destructive/60" : "border-primary/25",
         )}
       >

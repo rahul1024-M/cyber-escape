@@ -42,11 +42,11 @@ export function Hud() {
   const { player, run, xpForNext, updateSettings } = useGame();
   const pct = Math.min(100, Math.round((player.xp / xpForNext) * 100));
   return (
-    <header className="panel sticky top-0 z-30 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-none border-x-0 border-t-0 px-4 py-2 font-mono text-sm sm:flex sm:flex-wrap sm:gap-x-5">
+    <header className="panel sticky top-0 z-30 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2 rounded-none border-x-0 border-t-0 px-3 py-2 font-mono text-sm sm:flex sm:flex-wrap sm:gap-x-5 sm:px-4">
       <span className="min-w-0 truncate font-display tracking-widest text-primary">
         {player.name || "AGENT"}
       </span>
-      <div className="col-span-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 border-t border-border/70 pt-2 sm:col-span-1 sm:contents sm:border-0 sm:pt-0">
+      <div className="col-span-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-2 border-t border-border/70 pt-2 sm:col-span-1 sm:contents sm:border-0 sm:pt-0 sm:gap-x-4">
         <span className="flex items-center gap-2">
           <Star aria-hidden="true" className="h-4 w-4 text-warning" />
           LV {player.level}
@@ -56,7 +56,7 @@ export function Hud() {
             aria-valuemin={0}
             aria-valuemax={xpForNext}
             aria-valuenow={Math.min(player.xp, xpForNext)}
-            className="relative h-2 w-20 overflow-hidden rounded bg-muted sm:w-24"
+            className="relative h-2 w-16 overflow-hidden rounded bg-muted sm:w-24"
           >
             <span className="absolute inset-y-0 left-0 bg-primary" style={{ width: `${pct}%` }} />
           </span>
@@ -87,7 +87,7 @@ export function Hud() {
             ))}
           </span>
         )}
-        <span className="ml-auto whitespace-nowrap text-muted-foreground">
+        <span className="ml-auto whitespace-nowrap text-xs text-muted-foreground sm:text-sm">
           SCORE {player.score}
         </span>
       </div>

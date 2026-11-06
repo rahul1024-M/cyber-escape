@@ -34,16 +34,16 @@ export function CodenameScreen() {
   const { setName } = useGame();
   const [v, setV] = useState("");
   return (
-    <div className="grid min-h-screen place-items-center p-4">
+    <div className="grid min-h-screen place-items-center p-3 sm:p-4">
       <form
-        className="panel glow-border anim-rise w-full max-w-md p-8"
+        className="panel glow-border anim-rise w-full max-w-md p-5 sm:p-8"
         onSubmit={(e) => {
           e.preventDefault();
           setName(v);
         }}
       >
         <p className="font-mono text-xs tracking-[0.3em] text-accent">NEW OPERATIVE</p>
-        <h1 className="mt-2 font-display text-4xl text-primary text-glow">CYBER ESCAPE</h1>
+        <h1 className="mt-2 font-display text-3xl text-primary text-glow sm:text-4xl">CYBER ESCAPE</h1>
         <p className="mt-3 text-muted-foreground">
           You are trapped inside the NEXUS network. Break five sectors and defeat its AI core to
           escape.
@@ -136,13 +136,13 @@ export function MenuScreen() {
   ];
 
   return (
-    <main className="relative mx-auto flex min-h-[calc(100vh-48px)] w-full max-w-6xl flex-col justify-center overflow-hidden px-4 py-8 sm:px-8 lg:px-10">
+    <main className="relative mx-auto flex min-h-[calc(100dvh-48px)] w-full max-w-6xl flex-col justify-center overflow-visible px-3 py-6 sm:min-h-[calc(100vh-48px)] sm:px-8 sm:py-8 lg:px-10">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute left-1/2 top-1/2 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/[0.07] blur-3xl"
       />
 
-      <div className="relative grid items-center gap-10 lg:grid-cols-[1.15fr_0.85fr] lg:gap-14">
+      <div className="relative grid items-center gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:gap-14">
         {/* Branding and welcome */}
         <section className="text-center lg:text-left">
           <div className="mb-6 inline-flex items-center gap-3 rounded-full border border-primary/25 bg-primary/[0.06] px-4 py-2 font-mono text-[10px] tracking-[0.25em] text-primary sm:text-xs">
@@ -184,7 +184,7 @@ export function MenuScreen() {
         </section>
 
         {/* Mission control */}
-        <section className="panel glow-border relative mx-auto w-full max-w-xl overflow-hidden p-5 sm:p-7">
+        <section className="panel glow-border relative mx-auto w-full max-w-xl overflow-hidden p-4 sm:p-7">
           <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary to-transparent" />
 
           <div className="flex items-start justify-between gap-4">
@@ -206,8 +206,8 @@ export function MenuScreen() {
           </div>
 
           {/* Live progress statistics */}
-          <div className="mt-6 grid grid-cols-2 gap-3">
-            <div className="rounded-lg border border-border/70 bg-background/50 p-4">
+          <div className="mt-6 grid grid-cols-1 gap-3 min-[380px]:grid-cols-2">
+            <div className="rounded-lg border border-border/70 bg-background/50 p-3 sm:p-4">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Icons.Layers3 className="h-4 w-4 text-primary" />
                 <span className="font-mono text-[10px] tracking-wider">
@@ -237,7 +237,7 @@ export function MenuScreen() {
               </div>
             </div>
 
-            <div className="rounded-lg border border-border/70 bg-background/50 p-4">
+            <div className="rounded-lg border border-border/70 bg-background/50 p-3 sm:p-4">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Icons.Zap className="h-4 w-4 text-accent" />
                 <span className="font-mono text-[10px] tracking-wider">
@@ -325,7 +325,7 @@ export function MenuScreen() {
               OPERATIVE TOOLS
             </p>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 min-[430px]:grid-cols-2">
               {menuItems.map((item) => {
                 const Icon = item.icon;
 
@@ -467,7 +467,7 @@ function Modal({
         aria-modal="true"
         aria-labelledby="menu-dialog-title"
         tabIndex={-1}
-        className="panel glow-border anim-pop max-h-[85vh] w-full max-w-xl overflow-y-auto p-6 text-left"
+        className="panel glow-border anim-pop max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto p-4 text-left sm:max-h-[85vh] sm:p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
