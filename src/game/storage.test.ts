@@ -55,6 +55,72 @@ afterEach(() => {
 });
 
 describe("active mission storage", () => {
+  it.each([1, 2, 3, 4, 5])("restores active missions for Sector %i", (levelId) => {
+    const localStorage = createStorage();
+    vi.stubGlobal("window", { localStorage });
+    const player = createPlayer("AGENT");
+    const run = {
+      ...createActiveMission().run,
+      levelId,
+      index: 0,
+      ...(levelId === 5
+        ? { bossEncounterState: { phase: "reconnaissance" as const, bossHealth: 6 } }
+        : {}),
+    };
+    const activeMission = createActiveMission({ run, timeLeft: null });
+
+    saveGame(player, activeMission);
+
+    expect(loadStoredGame()?.activeMission).toEqual(activeMission);
+  });
+
+  it("restores Sector 06 active missions without changing completed player progress", () => {
+    const localStorage = createStorage();
+    vi.stubGlobal("window", { localStorage });
+    const player = {
+      ...createPlayer("AGENT"),
+      xp: 850,
+      coins: 410,
+      levels: {
+        1: { completed: true, bestScore: 500, perfect: true },
+        5: { completed: true, bestScore: 1200, perfect: false },
+      },
+      achievements: { first_breach: "2026-10-22T00:00:00.000Z" },
+    };
+    const activeMission = createActiveMission({
+      run: { ...createActiveMission().run, levelId: 6, index: 0 },
+      timeLeft: null,
+    });
+
+    saveGame(player, activeMission);
+    const restored = loadStoredGame();
+
+    expect(restored?.activeMission).toEqual(activeMission);
+    expect(restored?.player).toEqual(player);
+  });
+
+  it.each([0, 7, -1, 1.5])("rejects invalid active mission sector ID %s but keeps player progress", (levelId) => {
+    const localStorage = createStorage();
+    vi.stubGlobal("window", { localStorage });
+    const player = {
+      ...createPlayer("AGENT"),
+      xp: 325,
+      coins: 275,
+      levels: { 5: { completed: true, bestScore: 900, perfect: true } },
+      achievements: { core_breaker: "2026-10-22T00:00:00.000Z" },
+    };
+    const activeMission = createActiveMission({
+      run: { ...createActiveMission().run, levelId, index: 0 },
+      timeLeft: null,
+    });
+
+    saveGame(player, activeMission);
+    const restored = loadStoredGame();
+
+    expect(restored?.activeMission).toBeNull();
+    expect(restored?.player).toEqual(player);
+  });
+
   it("saves and restores the active sector, challenge, health, and remaining state", () => {
     const localStorage = createStorage();
     vi.stubGlobal("window", { localStorage });

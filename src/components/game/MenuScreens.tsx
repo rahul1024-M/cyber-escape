@@ -45,9 +45,22 @@ export function CodenameScreen() {
         <p className="font-mono text-xs tracking-[0.3em] text-accent">NEW OPERATIVE</p>
         <h1 className="mt-2 font-display text-3xl text-primary text-glow sm:text-4xl">CYBER ESCAPE</h1>
         <p className="mt-3 text-muted-foreground">
-          You are trapped inside the NEXUS network. Break five sectors and defeat its AI core to
-          escape.
+          You are trapped inside the NEXUS network. Clear all six sectors to escape.
         </p>
+        <div className="mt-6 grid gap-2 font-mono text-xs text-muted-foreground sm:grid-cols-3">
+          <div className="rounded-md border border-border/70 bg-background/30 p-3">
+            <span className="text-primary">01</span>
+            <p className="mt-1 leading-4">Solve defensive security challenges.</p>
+          </div>
+          <div className="rounded-md border border-border/70 bg-background/30 p-3">
+            <span className="text-primary">02</span>
+            <p className="mt-1 leading-4">Protect your health and spend hints wisely.</p>
+          </div>
+          <div className="rounded-md border border-border/70 bg-background/30 p-3">
+            <span className="text-primary">03</span>
+            <p className="mt-1 leading-4">Sign in anytime to back up your progress.</p>
+          </div>
+        </div>
         <label className="mt-6 block font-mono text-sm text-muted-foreground" htmlFor="codename">
           ENTER CODENAME
         </label>
@@ -721,6 +734,10 @@ export function LevelSelect() {
           BACK
         </Btn>
       </div>
+      <p className="-mt-3 mb-6 max-w-2xl font-mono text-sm text-muted-foreground">
+        Clear each sector to unlock the next. Sector 01 is your starting point; replay cleared
+        sectors any time to improve your score.
+      </p>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {LEVELS.map((l) => {
           const open = isUnlocked(l.id);
@@ -730,6 +747,11 @@ export function LevelSelect() {
               key={l.id}
               disabled={!open}
               onClick={() => startLevel(l.id)}
+              aria-label={
+                open
+                  ? `Start ${l.title}`
+                  : `${l.title} locked. Clear sector ${String(l.id - 1).padStart(2, "0")} first.`
+              }
               className={cn(
                 "panel anim-rise group p-5 text-left transition-all",
                 open ? "hover:glow-border hover:-translate-y-1" : "cursor-not-allowed opacity-50",
@@ -743,7 +765,11 @@ export function LevelSelect() {
               <h2 className="mt-2 font-display text-xl">{l.title}</h2>
               <p className="mt-1 text-sm text-muted-foreground">{l.tagline}</p>
               <div className="mt-4 flex items-center justify-between font-mono text-xs">
-                <span>{l.challenges.length} CHALLENGES</span>
+                <span className="max-w-[75%] leading-4">
+                  {open
+                    ? `${l.challenges.length} CHALLENGES`
+                    : `CLEAR SECTOR ${String(l.id - 1).padStart(2, "0")} TO UNLOCK`}
+                </span>
                 {!open ? (
                   <Lock className="h-4 w-4" />
                 ) : rec?.completed ? (

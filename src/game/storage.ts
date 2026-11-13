@@ -200,7 +200,9 @@ function sanitizeActiveMission(raw: unknown, player: PlayerState): ActiveMission
 
   const source = raw["run"];
   const levelId = source["levelId"];
-  if (!finiteNumber(levelId, 1, 5) || !Number.isInteger(levelId)) return null;
+  if (typeof levelId !== "number" || !Number.isFinite(levelId) || !Number.isInteger(levelId)) {
+    return null;
+  }
   const level = getLevel(levelId);
   if (!level) return null;
   const challengeIndex = source["index"];

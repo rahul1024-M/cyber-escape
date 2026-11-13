@@ -10,9 +10,9 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "Cyber Escape — Hack Your Way Out" },
-      { name: "description", content: "A cyberpunk security puzzle game: crack five sectors and defeat the NEXUS AI to escape." },
+      { name: "description", content: "A cyberpunk security puzzle game: clear six sectors of cybersecurity challenges and escape the NEXUS network." },
       { property: "og:title", content: "Cyber Escape — Hack Your Way Out" },
-      { property: "og:description", content: "Crack five sectors of real cybersecurity challenges and defeat the NEXUS AI." },
+      { property: "og:description", content: "Clear six sectors of real cybersecurity challenges and escape the NEXUS network." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],

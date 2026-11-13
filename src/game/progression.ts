@@ -103,4 +103,14 @@ export const BRIEFINGS: Record<number, Briefing> = {
     mission: "Confront NEXUS AI at its core and force an escape.",
     objectives: ["Survive the NEXUS interrogation", "Break its logic", "Execute the override"],
   },
+  6: {
+    threat: "SEVERE",
+    mission:
+      "Investigate suspicious activity, verify threats, and contain a suspected infection.",
+    objectives: [
+      "Verify the suspicious login",
+      "Check the warning through a trusted channel",
+      "Contain and report the incident",
+    ],
+  },
 };
