@@ -62,6 +62,170 @@ describe("auth session bootstrap", () => {
 });
 
 describe("CloudSaveSync", () => {
+  it("preserves local-only coin changes when local and cloud progress tie", async () => {
+    vi.useFakeTimers();
+    const local = { ...createPlayer("AGENT"), coins: 37 };
+    const cloud = { ...createPlayer("AGENT"), coins: 100 };
+    const applyCloudSave = vi.fn();
+    const pushSave = vi.fn().mockResolvedValue(undefined);
+    const sync = new CloudSaveSync({
+      fetchSave: vi.fn().mockResolvedValue(cloud),
+      pushSave,
+      getLocalSave: () => local,
+      applyCloudSave,
+      onStatus: vi.fn(),
+      isOnline: () => true,
+    });
+
+    sync.setUser("user-1");
+    await settlePromises();
+    await vi.advanceTimersByTimeAsync(1500);
+    await settlePromises();
+
+    expect(pushSave).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({ coins: 37 }),
+    );
+    expect(applyCloudSave).not.toHaveBeenCalled();
+    sync.dispose();
+  });
+
+  it("preserves local cosmetic and settings choices when cloud progress is newer", async () => {
+    const local = {
+      ...createPlayer("AGENT"),
+      cosmetic: "neon",
+      ownedCosmetics: ["cyan", "neon"],
+      settings: { sound: false, music: true, reducedMotion: true },
+    };
+    const cloud = {
+      ...createPlayer("AGENT"),
+      challengesCompleted: 4,
+      xp: 500,
+      score: 900,
+      cosmetic: "alert",
+      ownedCosmetics: ["cyan", "alert"],
+      settings: { sound: true, music: false, reducedMotion: false },
+    };
+    const applyCloudSave = vi.fn();
+    const sync = new CloudSaveSync({
+      fetchSave: vi.fn().mockResolvedValue(cloud),
+      pushSave: vi.fn().mockResolvedValue(undefined),
+      getLocalSave: () => local,
+      applyCloudSave,
+      onStatus: vi.fn(),
+      isOnline: () => true,
+    });
+
+    sync.setUser("user-1");
+    await settlePromises();
+
+    expect(applyCloudSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        challengesCompleted: 4,
+        xp: 500,
+        cosmetic: "neon",
+        ownedCosmetics: expect.arrayContaining(["cyan", "neon", "alert"]),
+        settings: { sound: false, music: true, reducedMotion: true },
+      }),
+    );
+    sync.dispose();
+  });
+
+  it("keeps newer local progress and merges non-conflicting progress from an older cloud save", async () => {
+    const local = {
+      ...createPlayer("AGENT"),
+      challengesCompleted: 6,
+      xp: 700,
+      score: 1200,
+      coins: 45,
+      levels: { 2: { completed: true, bestScore: 400, perfect: true } },
+    };
+    const cloud = {
+      ...createPlayer("AGENT"),
+      challengesCompleted: 2,
+      xp: 250,
+      score: 500,
+      coins: 300,
+      levels: { 3: { completed: true, bestScore: 600, perfect: false } },
+    };
+    const applyCloudSave = vi.fn();
+    const sync = new CloudSaveSync({
+      fetchSave: vi.fn().mockResolvedValue(cloud),
+      pushSave: vi.fn().mockResolvedValue(undefined),
+      getLocalSave: () => local,
+      applyCloudSave,
+      onStatus: vi.fn(),
+      isOnline: () => true,
+    });
+
+    sync.setUser("user-1");
+    await settlePromises();
+
+    expect(applyCloudSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        challengesCompleted: 6,
+        xp: 700,
+        score: 1200,
+        coins: 45,
+        levels: {
+          2: expect.objectContaining({ completed: true }),
+          3: expect.objectContaining({ completed: true }),
+        },
+      }),
+    );
+    sync.dispose();
+  });
+
+  it("rejects malformed cloud data without applying it or overwriting local progress", async () => {
+    const local = { ...createPlayer("LOCAL"), xp: 450, coins: 28 };
+    const applyCloudSave = vi.fn();
+    const pushSave = vi.fn().mockResolvedValue(undefined);
+    const onStatus = vi.fn<(status: SyncStatus) => void>();
+    const sync = new CloudSaveSync({
+      fetchSave: vi.fn().mockResolvedValue({ name: "BROKEN", coins: "many" }),
+      pushSave,
+      getLocalSave: () => local,
+      applyCloudSave,
+      onStatus,
+      isOnline: () => true,
+    });
+
+    sync.setUser("user-1");
+    await settlePromises();
+
+    expect(applyCloudSave).not.toHaveBeenCalled();
+    expect(pushSave).not.toHaveBeenCalled();
+    expect(onStatus).toHaveBeenLastCalledWith("error");
+    expect(local).toMatchObject({ xp: 450, coins: 28 });
+    sync.dispose();
+  });
+
+  it("fills defaults for a valid partial legacy cloud save", async () => {
+    const applyCloudSave = vi.fn();
+    const sync = new CloudSaveSync({
+      fetchSave: vi.fn().mockResolvedValue({ name: "LEGACY", xp: 120 }),
+      pushSave: vi.fn().mockResolvedValue(undefined),
+      getLocalSave: () => null,
+      applyCloudSave,
+      onStatus: vi.fn(),
+      isOnline: () => true,
+    });
+
+    sync.setUser("user-1");
+    await settlePromises();
+
+    expect(applyCloudSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "LEGACY",
+        xp: 120,
+        coins: 100,
+        cosmetic: "cyan",
+        settings: { sound: true, music: false, reducedMotion: false },
+      }),
+    );
+    sync.dispose();
+  });
+
   it("recovers from an initial fetch failure without losing or overwriting local progress", async () => {
     vi.useFakeTimers();
     const local = { ...createPlayer("LOCAL"), challengesCompleted: 4, score: 800 };

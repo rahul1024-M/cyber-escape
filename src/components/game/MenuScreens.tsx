@@ -14,11 +14,13 @@ import { Btn } from "./Hud";
 import { cn } from "@/lib/utils";
 import { fetchGlobalBoard } from "@/game/cloud";
 import { AccountPanel } from "./AccountPanel";
+import { SectorMap } from "./SectorMap";
 import {
   getDialogTabStopTarget,
   getLeaderboardEmptyMessage,
   loadLeaderboard,
 } from "./menuScreenUtils";
+import { CommandCenterBackground } from "./CommandCenterBackground";
 
 export function BootScreen() {
   return (
@@ -86,6 +88,7 @@ type Panel = null | "how" | "achievements" | "board" | "settings" | "shop" | "pr
 export function MenuScreen() {
   const {
     hasSave,
+    localSaveStatus,
     player,
     startNewGame,
     continueGame,
@@ -149,13 +152,22 @@ export function MenuScreen() {
   ];
 
   return (
-    <main className="relative mx-auto flex min-h-[calc(100dvh-48px)] w-full max-w-6xl flex-col justify-center overflow-visible px-3 py-6 sm:min-h-[calc(100vh-48px)] sm:px-8 sm:py-8 lg:px-10">
+    <main className="cinematic-screen isolate relative mx-auto flex min-h-[calc(100dvh-48px)] w-full max-w-6xl flex-col justify-center overflow-visible px-3 py-6 sm:min-h-[calc(100vh-48px)] sm:px-8 sm:py-8 lg:px-10">
+      <CommandCenterBackground />
+      {localSaveStatus === "error" && (
+        <p
+          role="alert"
+          className="relative z-10 mb-4 rounded-md border border-warning/50 bg-warning/5 p-3 text-center font-mono text-sm text-warning"
+        >
+          LOCAL SAVE UNAVAILABLE · Progress may not survive a reload.
+        </p>
+      )}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute left-1/2 top-1/2 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/[0.07] blur-3xl"
+        className="pointer-events-none absolute left-1/2 top-1/2 z-0 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/[0.07] blur-3xl"
       />
 
-      <div className="relative grid items-center gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:gap-14">
+      <div className="relative z-10 grid items-center gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:gap-14">
         {/* Branding and welcome */}
         <section className="text-center lg:text-left">
           <div className="mb-6 inline-flex items-center gap-3 rounded-full border border-primary/25 bg-primary/[0.06] px-4 py-2 font-mono text-[10px] tracking-[0.25em] text-primary sm:text-xs">
@@ -180,7 +192,7 @@ export function MenuScreen() {
           <p className="mx-auto mt-6 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg lg:mx-0">
             Welcome back,{" "}
             <span className="font-semibold text-foreground">{player.name}</span>.
-            {" "}The network is compromised. Five sectors stand between you and freedom.
+            {" "}The network is compromised. Six sectors stand between you and freedom.
           </p>
 
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3 lg:justify-start">
@@ -230,7 +242,7 @@ export function MenuScreen() {
 
               <p className="mt-3 font-display text-3xl text-foreground">
                 {completedSectors}
-                <span className="text-lg text-muted-foreground"> / 5</span>
+                <span className="text-lg text-muted-foreground"> / 6</span>
               </p>
 
               <div
@@ -238,13 +250,13 @@ export function MenuScreen() {
                 role="progressbar"
                 aria-label="Completed sectors"
                 aria-valuemin={0}
-                aria-valuemax={5}
-                aria-valuenow={Math.min(completedSectors, 5)}
+                aria-valuemax={6}
+                aria-valuenow={Math.min(completedSectors, 6)}
               >
                 <div
                   className="h-full rounded-full bg-primary transition-all"
                   style={{
-                    width: `${Math.min(completedSectors / 5, 1) * 100}%`,
+                    width: `${Math.min(completedSectors / 6, 1) * 100}%`,
                   }}
                 />
               </div>
@@ -506,7 +518,7 @@ function HowTo() {
   return (
     <ul className="space-y-3 text-muted-foreground">
       <li>
-        • Clear 5 sectors of real-world cybersecurity challenges. The last one is the NEXUS AI boss.
+        • Clear all 6 sectors of cybersecurity challenges to escape the NEXUS network.
       </li>
       <li>• You start each sector with 5 health. Wrong answers or timeouts cost 1 health.</li>
       <li>• Correct answers earn XP, coins and score. Streaks give bonus XP.</li>
@@ -726,64 +738,29 @@ function Shop() {
 
 export function LevelSelect() {
   const { player, isUnlocked, startLevel, go } = useGame();
+  const sectors = LEVELS.map((level) => ({
+    level,
+    unlocked: isUnlocked(level.id),
+    completed: Boolean(player.levels[level.id]?.completed),
+    bestScore: player.levels[level.id]?.bestScore ?? 0,
+  }));
+
   return (
-    <div className="mx-auto max-w-5xl p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-display text-3xl text-primary text-glow">SECTOR MAP</h1>
+    <div className="sector-select cinematic-screen mx-auto max-w-[1440px] p-4 sm:p-6">
+      <div className="mb-5 flex items-center justify-between gap-4">
+        <div>
+          <p className="mb-1 font-mono text-xs tracking-[0.3em] text-primary">NEXUS / NAVIGATION</p>
+          <h1 className="font-display text-3xl text-primary text-glow">SECTOR MAP</h1>
+        </div>
         <Btn variant="ghost" onClick={() => go("menu")}>
           BACK
         </Btn>
       </div>
-      <p className="-mt-3 mb-6 max-w-2xl font-mono text-sm text-muted-foreground">
+      <p className="mb-5 max-w-2xl font-mono text-sm text-muted-foreground">
         Clear each sector to unlock the next. Sector 01 is your starting point; replay cleared
         sectors any time to improve your score.
       </p>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {LEVELS.map((l) => {
-          const open = isUnlocked(l.id);
-          const rec = player.levels[l.id];
-          return (
-            <button
-              key={l.id}
-              disabled={!open}
-              onClick={() => startLevel(l.id)}
-              aria-label={
-                open
-                  ? `Start ${l.title}`
-                  : `${l.title} locked. Clear sector ${String(l.id - 1).padStart(2, "0")} first.`
-              }
-              className={cn(
-                "panel anim-rise group p-5 text-left transition-all",
-                open ? "hover:glow-border hover:-translate-y-1" : "cursor-not-allowed opacity-50",
-                l.id === 5 && open && "border-destructive",
-              )}
-            >
-              <div className="flex items-center justify-between font-mono text-xs text-muted-foreground">
-                <span>SECTOR {l.code}</span>
-                <span className={cn(l.id === 5 && "text-destructive")}>{l.difficulty}</span>
-              </div>
-              <h2 className="mt-2 font-display text-xl">{l.title}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{l.tagline}</p>
-              <div className="mt-4 flex items-center justify-between font-mono text-xs">
-                <span className="max-w-[75%] leading-4">
-                  {open
-                    ? `${l.challenges.length} CHALLENGES`
-                    : `CLEAR SECTOR ${String(l.id - 1).padStart(2, "0")} TO UNLOCK`}
-                </span>
-                {!open ? (
-                  <Lock className="h-4 w-4" />
-                ) : rec?.completed ? (
-                  <span className="flex items-center gap-1 text-accent">
-                    <Check className="h-4 w-4" /> BEST {rec.bestScore}
-                  </span>
-                ) : (
-                  <span className="text-primary">READY</span>
-                )}
-              </div>
-            </button>
-          );
-        })}
-      </div>
+      <SectorMap sectors={sectors} onSelect={(levelId) => startLevel(levelId)} />
     </div>
   );
 }

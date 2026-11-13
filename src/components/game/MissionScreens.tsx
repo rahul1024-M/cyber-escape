@@ -35,12 +35,13 @@ export function BriefingScreen() {
   const danger = brief.threat === "CRITICAL" || brief.threat === "SEVERE";
 
   return (
-    <div className="grid min-h-[calc(100vh-48px)] place-items-center p-3 sm:p-4">
+    <div className="mission-briefing-screen cinematic-screen grid min-h-[calc(100vh-48px)] place-items-center p-3 sm:p-4">
       <div
         className={cn(
-          "panel anim-pop w-full max-w-xl p-5 sm:p-8",
+          "mission-briefing-card panel anim-pop w-full max-w-xl p-5 sm:p-8",
           danger ? "border-destructive/60" : "border-primary/25",
         )}
+        data-threat={brief.threat.toLowerCase()}
       >
         <div className="mb-4 flex items-center justify-between">
           <p
@@ -60,12 +61,23 @@ export function BriefingScreen() {
             </button>
           )}
         </div>
+        <div
+          className="mission-briefing-meta"
+          aria-label={`Sector ${level.code}, threat ${brief.threat}`}
+        >
+          <span>
+            SECTOR {level.code} · {level.title}
+          </span>
+          <span className={cn("mission-threat", danger && "mission-threat--high")}>
+            THREAT / {brief.threat}
+          </span>
+        </div>
         <pre className="min-h-[11rem] whitespace-pre-wrap font-mono text-sm leading-relaxed text-foreground sm:text-base">
           {script.slice(0, n)}
           {!done && <span className="anim-blink text-primary">▌</span>}
         </pre>
         {done && (
-          <div className="anim-rise mt-4">
+          <div className="mission-objectives anim-rise mt-4">
             <p className="font-mono text-xs tracking-[0.3em] text-muted-foreground">OBJECTIVES</p>
             <ul className="mt-2 space-y-1 font-mono text-sm">
               {brief.objectives.map((o) => (
@@ -76,7 +88,9 @@ export function BriefingScreen() {
               ))}
             </ul>
             <div className="mt-6 flex flex-wrap gap-3">
-              <Btn onClick={beginMission}>BEGIN MISSION</Btn>
+              <Btn className="mission-begin-btn" onClick={beginMission}>
+                BEGIN MISSION
+              </Btn>
               <Btn variant="ghost" onClick={() => go("levels")}>
                 BACK
               </Btn>
@@ -110,21 +124,35 @@ export function MissionReportScreen() {
     ["MISTAKE PENALTY", -b.wrong],
   ];
   const nb = (k: string) => report.newBests.includes(k);
+  const correctAnswers = report.attempts.filter((attempt) => attempt.outcome === "correct").length;
+  const incorrectAnswers = report.attempts.filter(
+    (attempt) => attempt.outcome === "incorrect",
+  ).length;
 
   return (
-    <div className="mx-auto max-w-3xl p-3 sm:p-6">
+    <div className="mission-report-screen cinematic-screen mx-auto max-w-3xl p-3 sm:p-6">
       <div className="panel glow-border anim-pop overflow-hidden p-4 sm:p-8">
         <p className="text-center font-mono text-xs tracking-[0.4em] text-accent">
           MISSION COMPLETE
+        </p>
+        <p className="mission-clear-status" role="status">
+          SECTOR {level.code} CLEARED
         </p>
         <h1 className="my-2 text-center font-display text-2xl text-primary text-glow sm:text-4xl">
           {level.title}
         </h1>
 
         <div className="mt-5 grid grid-cols-2 gap-2 sm:mt-6 sm:grid-cols-3 sm:gap-3">
-          <Stat k="XP" v={`+${report.xp}`} />
-          <Stat k="COINS" v={`+${report.coins}`} />
-          <Stat k="ACCURACY" v={`${report.accuracy}%`} best={nb("accuracy")} />
+          <Stat className="mission-reward" k="XP" v={`+${report.xp}`} />
+          <Stat className="mission-reward" k="COINS" v={`+${report.coins}`} />
+          <Stat
+            className="mission-reward"
+            k="ACCURACY"
+            v={`${report.accuracy}%`}
+            best={nb("accuracy")}
+          />
+          <Stat k="CORRECT" v={correctAnswers} />
+          <Stat k="INCORRECT" v={incorrectAnswers} />
           <Stat k="TIME" v={fmtTime(report.seconds)} best={nb("time")} />
           <Stat k="HINTS" v={report.hints} best={nb("hints")} />
           <Stat k="BEST STREAK" v={report.bestStreak} best={nb("streak")} />
@@ -185,12 +213,23 @@ export function MissionReportScreen() {
   );
 }
 
-function Stat({ k, v, best }: { k: string; v: string | number; best?: boolean }) {
+function Stat({
+  k,
+  v,
+  best,
+  className,
+}: {
+  k: string;
+  v: string | number;
+  best?: boolean;
+  className?: string;
+}) {
   return (
     <div
       className={cn(
-        "rounded-md border bg-surface/35 p-3 text-center transition-colors",
+        "mission-stat rounded-md border bg-surface/35 p-3 text-center transition-colors",
         best ? "border-warning/70 bg-warning/5" : "border-border",
+        className,
       )}
     >
       <p className="font-mono text-xs text-muted-foreground">

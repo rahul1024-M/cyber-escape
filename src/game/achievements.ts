@@ -10,7 +10,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: "speed_demon", title: "SPEED DEMON", description: "Finish a timed challenge with over 10 seconds left.", icon: "Zap" },
   { id: "no_hints", title: "NO HINTS", description: "Complete a level without using a hint.", icon: "EyeOff" },
   { id: "streak_master", title: "STREAK MASTER", description: "Reach a 5-answer correct streak.", icon: "Flame" },
-  { id: "digital_escape", title: "DIGITAL ESCAPE", description: "Escape the NEXUS — complete the entire game.", icon: "DoorOpen" },
+  { id: "digital_escape", title: "DIGITAL ESCAPE", description: "Complete all six sectors and escape the NEXUS.", icon: "DoorOpen" },
   { id: "big_spender", title: "BIG SPENDER", description: "Unlock a cosmetic theme in the shop.", icon: "ShoppingBag" },
   { id: "survivor", title: "SURVIVOR", description: "Finish a level with only 1 health remaining.", icon: "HeartPulse" },
   { id: "first_blood", title: "FIRST BLOOD", description: "Complete your first challenge.", icon: "Crosshair" },

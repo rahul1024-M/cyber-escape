@@ -9,6 +9,7 @@ import { NEXUS_BOSS_HEALTH, NEXUS_PHASES } from "@/game/nexusEncounter";
 import { cn } from "@/lib/utils";
 import { NexusMentorPanel } from "./nexusMentorPanel";
 import { NexusMissionDebrief } from "./NexusMissionDebrief";
+import { NexusAiCore } from "./NexusAiCore";
 
 export function PlayScreen() {
   const {
@@ -42,6 +43,13 @@ export function PlayScreen() {
   const bossPhaseId = boss ? (run.bossEncounterState?.phase ?? challenge.bossPhase) : undefined;
   const bossPhase = bossPhaseId ? NEXUS_PHASES[bossPhaseId] : undefined;
   const bossHealth = run.bossEncounterState?.bossHealth ?? NEXUS_BOSS_HEALTH - run.index;
+  const answerState = answered
+    ? answered.correct
+      ? "correct"
+      : answered.chosen === "__timeout__"
+        ? "timeout"
+        : "incorrect"
+    : "pending";
 
   const optionState = (id: string) => {
     if (!answered) return "";
@@ -51,7 +59,13 @@ export function PlayScreen() {
   };
 
   return (
-    <div key={shake} className={cn("mx-auto max-w-3xl p-3 sm:p-6", shake > 0 && "anim-shake")}>
+    <div
+      key={shake}
+      className={cn(
+        "challenge-screen cinematic-screen mx-auto max-w-3xl p-3 sm:p-6",
+        shake > 0 && "anim-shake",
+      )}
+    >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2 font-mono text-xs text-muted-foreground">
         <button
           onClick={() => go("levels")}
@@ -79,12 +93,19 @@ export function PlayScreen() {
 
       <section
         className={cn(
-          "panel anim-rise p-3 sm:p-6",
+          "challenge-card panel anim-rise p-3 sm:p-6",
           boss ? "border-destructive/60" : "border-primary/25",
         )}
+        data-answer-state={answerState}
       >
         {boss && bossPhase && (
           <div className="mb-5 space-y-3 rounded-md border border-destructive/50 bg-destructive/5 p-3 sm:p-4">
+            {bossPhaseId && (
+              <NexusAiCore
+                phase={bossPhaseId}
+                feedback={answered ? (answered.correct ? "correct" : "incorrect") : null}
+              />
+            )}
             <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-xs">
               <span className="text-destructive">NEXUS · FICTIONAL SIMULATION</span>
               <span>
@@ -352,13 +373,18 @@ export function PlayScreen() {
         )}
 
         {hintShown && !answered && (
-          <p className="mt-4 rounded-md border border-warning/50 p-3 text-sm text-warning">
+          <p className="challenge-hint anim-rise mt-4 rounded-md border border-warning/50 p-3 text-sm text-warning">
             HINT: {challenge.hint}
           </p>
         )}
 
         {answered ? (
-          <div className="anim-rise mt-5 border-t border-border pt-4">
+          <div
+            className={cn(
+              "challenge-result anim-rise mt-5 border-t border-border pt-4",
+              `challenge-result--${answerState}`,
+            )}
+          >
             <p
               className={cn("font-display", answered.correct ? "text-success" : "text-destructive")}
             >
@@ -500,11 +526,12 @@ function Result({
   bad?: boolean;
 }) {
   return (
-    <div className="grid min-h-[calc(100vh-48px)] place-items-center p-6">
+    <div className="cinematic-screen grid min-h-[calc(100vh-48px)] place-items-center p-4 sm:p-6">
       <div
         className={cn(
-          "panel glow-border anim-pop w-full max-w-lg p-8 text-center",
+          "cinematic-result panel glow-border anim-pop w-full max-w-lg p-5 text-center sm:p-8",
           bad && "border-destructive",
+          good ? "cinematic-result--success" : bad ? "cinematic-result--failure" : "",
         )}
       >
         <p

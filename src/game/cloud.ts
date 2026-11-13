@@ -7,11 +7,12 @@ import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import type { LeaderboardEntry, PlayerState } from "./types";
+import { decodePlayerSave } from "./storage";
 
 export type SyncStatus = "guest" | "syncing" | "synced" | "offline" | "error";
 
 interface CloudSaveSyncOptions {
-  fetchSave: (userId: string) => Promise<PlayerState | null>;
+  fetchSave: (userId: string) => Promise<unknown>;
   pushSave: (userId: string, player: PlayerState) => Promise<void>;
   getLocalSave: () => PlayerState | null;
   applyCloudSave: (player: PlayerState) => void;
@@ -143,7 +144,9 @@ export class CloudSaveSync {
         this.options.onStatus("syncing");
         let cloud: PlayerState | null;
         try {
-          cloud = await this.options.fetchSave(userId);
+          const rawCloud = await this.options.fetchSave(userId);
+          cloud = rawCloud === null ? null : decodePlayerSave(rawCloud);
+          if (rawCloud !== null && !cloud) throw new Error("Cloud save data is invalid.");
         } catch {
           if (this.userId === userId) {
             this.flushRequested = false;
@@ -155,7 +158,15 @@ export class CloudSaveSync {
 
         const local = this.options.getLocalSave() ?? this.latestPlayer;
         const pick = pickNewerSave(local, cloud);
-        if (pick === "cloud" && cloud) {
+        if (local && cloud) {
+          const merged = mergePlayerSaves(local, cloud, pick === "none" ? "local" : pick);
+          this.lastSyncedSave = JSON.stringify(cloud);
+          this.latestPlayer = merged;
+          this.pendingSave = JSON.stringify(merged) !== this.lastSyncedSave;
+          if (JSON.stringify(merged) !== JSON.stringify(local)) {
+            this.options.applyCloudSave(merged);
+          }
+        } else if (cloud) {
           this.lastSyncedSave = JSON.stringify(cloud);
           this.latestPlayer = cloud;
           this.options.applyCloudSave(cloud);
@@ -304,10 +315,82 @@ export function pickNewerSave(local: PlayerState | null, cloud: PlayerState | nu
   return "cloud";
 }
 
-export async function fetchCloudSave(userId: string): Promise<PlayerState | null> {
+export function mergePlayerSaves(
+  local: PlayerState,
+  cloud: PlayerState,
+  preferredProgress: "local" | "cloud",
+): PlayerState {
+  const preferred = preferredProgress === "local" ? local : cloud;
+  const levelIds = new Set([
+    ...Object.keys(local.levels).map(Number),
+    ...Object.keys(cloud.levels).map(Number),
+  ]);
+  const levels: PlayerState["levels"] = {};
+  const minOptional = (a: number | undefined, b: number | undefined) =>
+    a === undefined ? b : b === undefined ? a : Math.min(a, b);
+  const maxOptional = (a: number | undefined, b: number | undefined) =>
+    a === undefined ? b : b === undefined ? a : Math.max(a, b);
+  for (const id of levelIds) {
+    const a = local.levels[id];
+    const b = cloud.levels[id];
+    const base = a ?? b;
+    if (!base) continue;
+    const bestTime = minOptional(a?.bestTime, b?.bestTime);
+    const bestAccuracy = maxOptional(a?.bestAccuracy, b?.bestAccuracy);
+    const fewestHints = minOptional(a?.fewestHints, b?.fewestHints);
+    const bestStreak = maxOptional(a?.bestStreak, b?.bestStreak);
+    levels[id] = {
+      completed: Boolean(a?.completed || b?.completed),
+      bestScore: Math.max(a?.bestScore ?? 0, b?.bestScore ?? 0),
+      perfect: Boolean(a?.perfect || b?.perfect),
+      ...(bestTime !== undefined && { bestTime }),
+      ...(bestAccuracy !== undefined && { bestAccuracy }),
+      ...(fewestHints !== undefined && { fewestHints }),
+      ...(bestStreak !== undefined && { bestStreak }),
+    };
+  }
+
+  return {
+    ...preferred,
+    id: local.id,
+    name: local.name || cloud.name,
+    level: Math.max(local.level, cloud.level),
+    xp: preferred.xp,
+    coins: local.coins,
+    score: preferred.score,
+    streak: local.streak,
+    highestStreak: Math.max(local.highestStreak, cloud.highestStreak),
+    totalCorrect: Math.max(local.totalCorrect, cloud.totalCorrect),
+    totalAnswers: Math.max(local.totalAnswers, cloud.totalAnswers),
+    hintsUsed: Math.max(local.hintsUsed, cloud.hintsUsed),
+    challengesCompleted: preferred.challengesCompleted,
+    levels,
+    achievements: { ...cloud.achievements, ...local.achievements },
+    settings: local.settings,
+    cosmetic: local.cosmetic,
+    ownedCosmetics: Array.from(
+      new Set([...local.ownedCosmetics, ...cloud.ownedCosmetics, "cyan"]),
+    ),
+    skills: {
+      networking: Math.max(local.skills.networking, cloud.skills.networking),
+      forensics: Math.max(local.skills.forensics, cloud.skills.forensics),
+      security: Math.max(local.skills.security, cloud.skills.security),
+      logic: Math.max(local.skills.logic, cloud.skills.logic),
+    },
+    createdAt:
+      Date.parse(local.createdAt) <= Date.parse(cloud.createdAt)
+        ? local.createdAt
+        : cloud.createdAt,
+    completedMissionRuns: Array.from(
+      new Set([...cloud.completedMissionRuns, ...local.completedMissionRuns]),
+    ).slice(-100),
+  };
+}
+
+export async function fetchCloudSave(userId: string): Promise<unknown> {
   const { data, error } = await supabase.from("cloud_saves").select("data").eq("user_id", userId).maybeSingle();
   if (error) throw error;
-  return (data?.data as unknown as PlayerState) ?? null;
+  return data?.data ?? null;
 }
 
 export async function pushCloudSave(userId: string, player: PlayerState) {

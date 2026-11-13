@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createPlayer, loadGame, loadStoredGame, resetGame, saveGame } from "./storage";
+import {
+  createPlayer,
+  decodePlayerSave,
+  loadGame,
+  loadStoredGame,
+  resetGame,
+  saveGame,
+} from "./storage";
 import type { ActiveMissionSave } from "./types";
 import {
   createEmptyCyberRangeProgress,
@@ -163,13 +170,42 @@ describe("active mission storage", () => {
 
     localStorage.setItem(PLAYER_KEY, "{invalid");
     expect(loadStoredGame()).toBeNull();
-    expect(localStorage.removeItem).toHaveBeenCalledWith(PLAYER_KEY);
+    expect(localStorage.removeItem).not.toHaveBeenCalled();
+    expect(saveGame(createPlayer("NEW AGENT"))).toBe(false);
+    expect(localStorage.getItem(PLAYER_KEY)).toBe("{invalid");
 
     localStorage.setItem(PLAYER_KEY, JSON.stringify({
       player,
       activeMission: { ...createActiveMission(), version: 2 },
     }));
     expect(loadStoredGame()?.activeMission).toBeNull();
+  });
+
+  it("reports local storage write failures instead of claiming the save succeeded", () => {
+    const localStorage = createStorage();
+    localStorage.setItem.mockImplementation(() => {
+      throw new Error("storage quota exceeded");
+    });
+    vi.stubGlobal("window", { localStorage });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(saveGame(createPlayer("AGENT"))).toBe(false);
+    expect(error).toHaveBeenCalledWith(
+      "[Storage] Could not persist local game progress.",
+      expect.any(Error),
+    );
+  });
+
+  it("decodes legacy partial player saves with defaults and rejects malformed cloud fields", () => {
+    expect(decodePlayerSave({ name: "LEGACY", xp: 125 }) ).toMatchObject({
+      name: "LEGACY",
+      xp: 125,
+      coins: 100,
+      settings: { sound: true, music: false, reducedMotion: false },
+    });
+    expect(decodePlayerSave({ name: "BROKEN", coins: "many" })).toBeNull();
+    expect(decodePlayerSave({ name: "BROKEN", settings: { sound: "yes" } })).toBeNull();
+    expect(decodePlayerSave({ name: "BROKEN", levels: { 99: { completed: true } } })).toBeNull();
   });
 
   it("does not restore completed mission state or retain it after reset", () => {

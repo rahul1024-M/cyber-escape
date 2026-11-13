@@ -58,7 +58,7 @@ import {
   selectNetworkPathNode as selectPathNode,
 } from "./networkPathPuzzles";
 import { isChallengeAnswerCorrect } from "./challengeAnswer";
-import { claimMissionRun } from "./missionCompletion";
+import { claimMissionRun, isFinalSectorCompletion } from "./missionCompletion";
 import { isEnabled } from "./flags";
 import { clearMissionAttempts, recordMissionAttempt, type MissionAttempt } from "./missionDebrief";
 import {
@@ -96,6 +96,8 @@ export type Screen =
   | "failure"
   | "cyberRange"
   | "cyberLab";
+
+export type LocalSaveStatus = "available" | "saved" | "error";
 
 export interface Toast {
   id: number;
@@ -146,6 +148,7 @@ interface GameContextValue {
   shake: number;
   runSeconds: number;
   hasSave: boolean;
+  localSaveStatus: LocalSaveStatus;
   xpForNext: number;
   accuracy: number;
   go: (s: Screen) => void;
@@ -225,6 +228,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [shake, setShake] = useState(0);
   const [runSeconds, setRunSeconds] = useState(0);
   const [hasSave, setHasSave] = useState(false);
+  const [localSaveStatus, setLocalSaveStatus] = useState<LocalSaveStatus>("available");
   const [hydrated, setHydrated] = useState(false);
   const [cyberRangeProgress, setCyberRangeProgress] = useState<CyberRangeProgress>(() => ({
     version: 1,
@@ -261,6 +265,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     if (saved) {
       setPlayer(saved.player);
       setHasSave(true);
+      setLocalSaveStatus("saved");
       setCyberRangeProgress(saved.cyberRange);
       setSelectedCyberRangeLabId(
         saved.cyberRange.active?.labId ??
@@ -290,8 +295,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
   /* ---------- persistence ---------- */
   useEffect(() => {
     if (!hydrated || !player.name) return;
-    saveGame(player, activeMission, cyberRangeProgress);
-    setHasSave(true);
+    const saved = saveGame(player, activeMission, cyberRangeProgress);
+    setLocalSaveStatus(saved ? "saved" : "error");
+    if (saved) setHasSave(true);
   }, [player, activeMission, cyberRangeProgress, hydrated]);
 
   /* ---------- optional cloud sync (never blocks play) ---------- */
@@ -1061,7 +1067,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
         4: "security_expert",
         5: "core_breaker",
       };
-      ids.push(byLevel[level.id] ?? "");
+      const sectorAchievement = byLevel[level.id];
+      if (sectorAchievement) ids.push(sectorAchievement);
       if (level.id === 5) ids.push("boss_breaker");
       if (run.wrongInLevel === 0) {
         ids.push("perfect_run");
@@ -1071,7 +1078,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       if (run.hintsInLevel === 0) ids.push("no_hints");
       if (run.health === 1) ids.push("survivor");
       if (seconds < 90) ids.push("speedrunner");
-      if (LEVELS.every((l) => l.id === level.id || next.levels[l.id]?.completed))
+      if (isFinalSectorCompletion(level.id, LEVELS, next.levels))
         ids.push("digital_escape");
       return unlock(next, ids);
     });
@@ -1085,7 +1092,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setAnswered(null);
     setTimeLeft(null);
     setRun(null);
-    setScreen(level.id === 5 ? "victory" : "levelComplete");
+    setScreen(isFinalSectorCompletion(level.id, LEVELS, player.levels) ? "victory" : "levelComplete");
   }, [player.completedMissionRuns, player.levels, pushToast, run, unlock]);
 
   /* ---------- victory: record leaderboard entry ---------- */
@@ -1232,6 +1239,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setRun(null);
     setAnswered(null);
     setHasSave(false);
+    setLocalSaveStatus("available");
     setScreen("codename");
   }, []);
 
@@ -1252,6 +1260,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       shake,
       runSeconds,
       hasSave,
+      localSaveStatus,
       xpForNext: XP_THRESHOLDS[Math.min(player.level - 1, 4)] ?? 1000,
       accuracy:
         player.totalAnswers > 0
@@ -1315,6 +1324,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       shake,
       runSeconds,
       hasSave,
+      localSaveStatus,
       go,
       setName,
       startNewGame,

@@ -69,61 +69,160 @@ export function createPlayer(name: string): PlayerState {
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function isFiniteNonnegative(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
 /** Defensive merge so corrupted or partial saves can never crash the game. */
-function sanitize(raw: unknown): PlayerState | null {
-  if (!raw || typeof raw !== "object") return null;
-  const r = raw as Partial<PlayerState>;
-  if (typeof r.name !== "string" || !r.name.trim()) return null;
-  const base = createPlayer(r.name);
+export function decodePlayerSave(raw: unknown): PlayerState | null {
+  if (!isRecord(raw) || typeof raw["name"] !== "string" || !raw["name"].trim()) return null;
+
+  const numericFields = [
+    "xp",
+    "coins",
+    "score",
+    "streak",
+    "highestStreak",
+    "totalCorrect",
+    "totalAnswers",
+    "hintsUsed",
+    "challengesCompleted",
+  ] as const;
+  if (
+    numericFields.some(
+      (field) => raw[field] !== undefined && !isFiniteNonnegative(raw[field]),
+    ) ||
+    (raw["level"] !== undefined &&
+      (!Number.isInteger(raw["level"]) ||
+        typeof raw["level"] !== "number" ||
+        raw["level"] < 1 ||
+        raw["level"] > 5))
+  ) return null;
+  if (raw["id"] !== undefined && typeof raw["id"] !== "string") return null;
+  if (raw["createdAt"] !== undefined && typeof raw["createdAt"] !== "string") return null;
+
+  let levels: PlayerState["levels"] = {};
+  if (raw["levels"] !== undefined) {
+    if (!isRecord(raw["levels"])) return null;
+    for (const [key, value] of Object.entries(raw["levels"])) {
+      if (!Number.isInteger(Number(key)) || !getLevel(Number(key)) || !isRecord(value)) return null;
+      const optionalNumbers = ["bestTime", "bestAccuracy", "fewestHints", "bestStreak"] as const;
+      if (
+        (value["completed"] !== undefined && typeof value["completed"] !== "boolean") ||
+        (value["bestScore"] !== undefined && !isFiniteNonnegative(value["bestScore"])) ||
+        (value["perfect"] !== undefined && typeof value["perfect"] !== "boolean") ||
+        optionalNumbers.some(
+          (field) => value[field] !== undefined && !isFiniteNonnegative(value[field]),
+        )
+      ) return null;
+      levels[Number(key)] = {
+        completed: value["completed"] === true,
+        bestScore: typeof value["bestScore"] === "number" ? value["bestScore"] : 0,
+        perfect: value["perfect"] === true,
+        ...(typeof value["bestTime"] === "number" && { bestTime: value["bestTime"] }),
+        ...(typeof value["bestAccuracy"] === "number" && {
+          bestAccuracy: value["bestAccuracy"],
+        }),
+        ...(typeof value["fewestHints"] === "number" && {
+          fewestHints: value["fewestHints"],
+        }),
+        ...(typeof value["bestStreak"] === "number" && {
+          bestStreak: value["bestStreak"],
+        }),
+      };
+    }
+  }
+
+  const achievements: PlayerState["achievements"] = {};
+  if (raw["achievements"] !== undefined) {
+    if (!isRecord(raw["achievements"])) return null;
+    for (const [id, date] of Object.entries(raw["achievements"])) {
+      if (typeof date !== "string") return null;
+      achievements[id] = date;
+    }
+  }
+
+  const rawSettings = raw["settings"];
+  if (rawSettings !== undefined && !isRecord(rawSettings)) return null;
+  const settings = isRecord(rawSettings) ? rawSettings : {};
+  if (
+    ["sound", "music", "reducedMotion"].some(
+      (key) => settings[key] !== undefined && typeof settings[key] !== "boolean",
+    )
+  ) return null;
+
+  if (raw["cosmetic"] !== undefined && typeof raw["cosmetic"] !== "string") return null;
+  if (
+    raw["ownedCosmetics"] !== undefined &&
+    (!Array.isArray(raw["ownedCosmetics"]) ||
+      !raw["ownedCosmetics"].every((cosmetic) => typeof cosmetic === "string"))
+  ) return null;
+
+  const rawSkills = raw["skills"];
+  if (rawSkills !== undefined && !isRecord(rawSkills)) return null;
+  const skills = isRecord(rawSkills) ? rawSkills : {};
+  const skillNames = ["networking", "forensics", "security", "logic"] as const;
+  if (
+    skillNames.some(
+      (skill) => skills[skill] !== undefined && !isFiniteNonnegative(skills[skill]),
+    )
+  ) return null;
+
+  if (
+    raw["completedMissionRuns"] !== undefined &&
+    (!Array.isArray(raw["completedMissionRuns"]) ||
+      !raw["completedMissionRuns"].every((id) => typeof id === "string"))
+  ) return null;
+
+  const name = raw["name"];
+  const base = createPlayer(name);
   const num = (v: unknown, d: number) =>
     typeof v === "number" && Number.isFinite(v) ? v : d;
   return {
     ...base,
-    id: typeof r.id === "string" ? r.id : base.id,
-    level: Math.min(5, Math.max(1, num(r.level, 1))),
-    xp: Math.max(0, num(r.xp, 0)),
-    coins: Math.max(0, num(r.coins, 100)),
-    score: Math.max(0, num(r.score, 0)),
-    streak: Math.max(0, num(r.streak, 0)),
-    highestStreak: Math.max(0, num(r.highestStreak, 0)),
-    totalCorrect: Math.max(0, num(r.totalCorrect, 0)),
-    totalAnswers: Math.max(0, num(r.totalAnswers, 0)),
-    hintsUsed: Math.max(0, num(r.hintsUsed, 0)),
-    challengesCompleted: Math.max(0, num(r.challengesCompleted, 0)),
-    levels:
-      r.levels && typeof r.levels === "object" ? (r.levels as PlayerState["levels"]) : {},
-    achievements:
-      r.achievements && typeof r.achievements === "object"
-        ? (r.achievements as PlayerState["achievements"])
-        : {},
+    id: typeof raw["id"] === "string" ? raw["id"] : base.id,
+    level: Math.min(5, Math.max(1, num(raw["level"], 1))),
+    xp: Math.max(0, num(raw["xp"], 0)),
+    coins: Math.max(0, num(raw["coins"], 100)),
+    score: Math.max(0, num(raw["score"], 0)),
+    streak: Math.max(0, num(raw["streak"], 0)),
+    highestStreak: Math.max(0, num(raw["highestStreak"], 0)),
+    totalCorrect: Math.max(0, num(raw["totalCorrect"], 0)),
+    totalAnswers: Math.max(0, num(raw["totalAnswers"], 0)),
+    hintsUsed: Math.max(0, num(raw["hintsUsed"], 0)),
+    challengesCompleted: Math.max(0, num(raw["challengesCompleted"], 0)),
+    levels,
+    achievements,
     settings: {
-      sound: r.settings?.sound ?? true,
-      music: r.settings?.music ?? false,
-      reducedMotion: r.settings?.reducedMotion ?? false,
+      sound: (settings["sound"] as boolean | undefined) ?? true,
+      music: (settings["music"] as boolean | undefined) ?? false,
+      reducedMotion: (settings["reducedMotion"] as boolean | undefined) ?? false,
     },
-    cosmetic: typeof r.cosmetic === "string" ? r.cosmetic : "cyan",
-    ownedCosmetics: Array.isArray(r.ownedCosmetics)
-      ? Array.from(new Set(["cyan", ...r.ownedCosmetics.filter((c) => typeof c === "string")]))
+    cosmetic: typeof raw["cosmetic"] === "string" ? raw["cosmetic"] : "cyan",
+    ownedCosmetics: Array.isArray(raw["ownedCosmetics"])
+      ? Array.from(new Set(["cyan", ...raw["ownedCosmetics"]]))
       : ["cyan"],
     skills: {
-      networking: Math.max(0, num(r.skills?.networking, 0)),
-      forensics: Math.max(0, num(r.skills?.forensics, 0)),
-      security: Math.max(0, num(r.skills?.security, 0)),
-      logic: Math.max(0, num(r.skills?.logic, 0)),
+      networking: Math.max(0, num(skills["networking"], 0)),
+      forensics: Math.max(0, num(skills["forensics"], 0)),
+      security: Math.max(0, num(skills["security"], 0)),
+      logic: Math.max(0, num(skills["logic"], 0)),
     },
-    createdAt: typeof r.createdAt === "string" ? r.createdAt : base.createdAt,
-    completedMissionRuns: Array.isArray(r.completedMissionRuns)
-      ? Array.from(new Set(r.completedMissionRuns.filter((id) => typeof id === "string"))).slice(-100)
+    createdAt: typeof raw["createdAt"] === "string" ? raw["createdAt"] : base.createdAt,
+    completedMissionRuns: Array.isArray(raw["completedMissionRuns"])
+      ? Array.from(new Set(raw["completedMissionRuns"])).slice(-100)
       : [],
   };
 }
 
+const sanitize = decodePlayerSave;
+
 export function loadGame(): PlayerState | null {
   return loadStoredGame()?.player ?? null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function finiteNumber(value: unknown, min: number, max = Number.MAX_SAFE_INTEGER): value is number {
@@ -343,9 +442,16 @@ function sanitizeActiveMission(raw: unknown, player: PlayerState): ActiveMission
 
 export function loadStoredGame(): StoredGame | null {
   if (typeof window === "undefined") return null;
+  let raw: string | null;
   try {
-    const raw = window.localStorage.getItem(PLAYER_KEY);
-    if (!raw) return null;
+    raw = window.localStorage.getItem(PLAYER_KEY);
+  } catch (error) {
+    console.error("[Storage] Could not read local game progress.", error);
+    return null;
+  }
+  if (!raw) return null;
+
+  try {
     const parsed: unknown = JSON.parse(raw);
     if (!isRecord(parsed)) return null;
     const hasEnvelope = Object.prototype.hasOwnProperty.call(parsed, "player");
@@ -358,12 +464,8 @@ export function loadStoredGame(): StoredGame | null {
       ? parsed["cyberRange"]
       : createEmptyCyberRangeProgress();
     return { player, activeMission, cyberRange };
-  } catch {
-    try {
-      window.localStorage.removeItem(PLAYER_KEY);
-    } catch {
-      /* ignore */
-    }
+  } catch (error) {
+    console.error("[Storage] Could not decode local game progress.", error);
     return null;
   }
 }
@@ -372,10 +474,14 @@ export function saveGame(
   player: PlayerState,
   activeMission?: ActiveMissionSave | null,
   cyberRange?: CyberRangeProgress,
-) {
-  if (typeof window === "undefined") return;
+): boolean {
+  if (typeof window === "undefined") return false;
   try {
-    const saved = loadStoredGame();
+    const stored = window.localStorage.getItem(PLAYER_KEY);
+    const saved = stored === null ? null : loadStoredGame();
+    if (stored !== null && !saved) {
+      throw new Error("Existing local game progress could not be decoded; refusing to overwrite it.");
+    }
     const savedMission =
       activeMission === undefined ? saved?.activeMission ?? null : activeMission;
     const savedCyberRange = cyberRange ?? saved?.cyberRange ?? createEmptyCyberRangeProgress();
@@ -383,8 +489,10 @@ export function saveGame(
       PLAYER_KEY,
       JSON.stringify({ player, activeMission: savedMission, cyberRange: savedCyberRange }),
     );
-  } catch {
-    /* storage full or blocked — game continues in memory */
+    return true;
+  } catch (error) {
+    console.error("[Storage] Could not persist local game progress.", error);
+    return false;
   }
 }
 
