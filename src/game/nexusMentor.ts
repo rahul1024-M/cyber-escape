@@ -14,6 +14,11 @@ export type NexusSectorId = (typeof NEXUS_SECTOR_IDS)[number];
 export type NexusMentorMode = (typeof NEXUS_MENTOR_MODES)[number];
 export type NexusMentorStage = (typeof NEXUS_MENTOR_STAGES)[number];
 
+export interface NexusMentorIdentity {
+  identity: `guest:${string}` | `user:${string}`;
+  identityType: "guest" | "user";
+}
+
 export interface NexusMentorRequest {
   sectorId: NexusSectorId;
   missionDescription: string;
@@ -41,10 +46,33 @@ export interface NexusMentorProvider {
   ): Promise<unknown>;
 }
 
+export interface NexusMentorQuotaReservation {
+  reservationId: string;
+  expiresAt: number;
+  reservedCostUsd: number;
+}
+
+export type NexusMentorQuotaReservationResult =
+  | ({ status: "ok" } & NexusMentorQuotaReservation)
+  | { status: "denied" }
+  | { status: "retry_later" };
+
+export interface NexusMentorQuotaOperations {
+  reserve: (identity: NexusMentorIdentity) => Promise<NexusMentorQuotaReservationResult>;
+  settle: (
+    identity: NexusMentorIdentity,
+    reservationId: string,
+    actualCostUsd: number,
+  ) => Promise<boolean>;
+  release: (identity: NexusMentorIdentity, reservationId: string) => Promise<boolean>;
+}
+
 export interface NexusMentorDependencies {
   provider: NexusMentorProvider | null;
-  authenticate: () => Promise<string | null>;
-  allowRequest: (userId: string) => Promise<boolean>;
+  isAiEnabled: () => boolean;
+  resolveIdentity: () => Promise<NexusMentorIdentity | null>;
+  quota: NexusMentorQuotaOperations;
+  authorizeRequest: (identity: NexusMentorIdentity) => Promise<boolean>;
   timeoutMs?: number;
 }
 
@@ -54,6 +82,7 @@ const MAX_QUESTION_CHARS = 400;
 const MAX_RESPONSE_CHARS = 1600;
 const MAX_OUTPUT_TOKENS = 384;
 const DEFAULT_TIMEOUT_MS = 8000;
+const RESERVATION_EXPIRY_SAFETY_MS = 1000;
 const REQUEST_KEYS = ["sectorId", "missionDescription", "stage", "question", "mode"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -141,47 +170,144 @@ export async function handleNexusMentorJson(
   }
   const request = validateNexusMentorRequest(parsed);
   if (!request) return { ok: false, error: "invalid_request" };
-  if (!dependencies.provider) return { ok: false, error: "not_configured" };
-
-  let userId: string | null;
+  const provider = dependencies.provider;
+  if (!provider) return { ok: false, error: "not_configured" };
+  let aiEnabled = false;
   try {
-    userId = await dependencies.authenticate();
+    aiEnabled = dependencies.isAiEnabled();
+  } catch {
+    return { ok: false, error: "not_configured" };
+  }
+  if (!aiEnabled) {
+    return { ok: false, error: "not_configured" };
+  }
+
+  let identity: NexusMentorIdentity | null;
+  try {
+    identity = await dependencies.resolveIdentity();
   } catch {
     return { ok: false, error: "unauthorized" };
   }
-  if (!userId) return { ok: false, error: "unauthorized" };
+  if (!identity) return { ok: false, error: "unauthorized" };
 
-  let allowed: boolean;
+  let reservationResult: NexusMentorQuotaReservationResult;
   try {
-    allowed = await dependencies.allowRequest(userId);
+    reservationResult = await dependencies.quota.reserve(identity);
   } catch {
     return { ok: false, error: "rate_limited" };
   }
-  if (!allowed) return { ok: false, error: "rate_limited" };
+  if (reservationResult.status !== "ok") {
+    return { ok: false, error: "rate_limited" };
+  }
+  if (!isValidReservation(reservationResult)) {
+    if (/^[A-Za-z0-9_-]{16,128}$/.test(reservationResult.reservationId)) {
+      try {
+        await dependencies.quota.release(identity, reservationResult.reservationId);
+      } catch {
+        return { ok: false, error: "rate_limited" };
+      }
+    }
+    return { ok: false, error: "rate_limited" };
+  }
+  const reservation: NexusMentorQuotaReservation = {
+    reservationId: reservationResult.reservationId,
+    expiresAt: reservationResult.expiresAt,
+    reservedCostUsd: reservationResult.reservedCostUsd,
+  };
+  let cleanupStarted = false;
+  const releaseBeforeProvider = async (): Promise<boolean> => {
+    if (cleanupStarted) return false;
+    cleanupStarted = true;
+    try {
+      return await dependencies.quota.release(identity, reservation.reservationId);
+    } catch {
+      return false;
+    }
+  };
+  const settleAfterProvider = async (): Promise<boolean> => {
+    if (cleanupStarted) return false;
+    cleanupStarted = true;
+    try {
+      return await dependencies.quota.settle(
+        identity,
+        reservation.reservationId,
+        reservation.reservedCostUsd,
+      );
+    } catch {
+      return false;
+    }
+  };
+
+  let authorized: boolean;
+  try {
+    authorized = await dependencies.authorizeRequest(identity);
+  } catch {
+    await releaseBeforeProvider();
+    return { ok: false, error: "rate_limited" };
+  }
+  if (!authorized) {
+    await releaseBeforeProvider();
+    return { ok: false, error: "rate_limited" };
+  }
+
+  const reservationTimeRemainingMs =
+    reservation.expiresAt - Date.now() - RESERVATION_EXPIRY_SAFETY_MS;
+  const providerTimeoutMs = Math.min(
+    dependencies.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    reservationTimeRemainingMs,
+  );
+  if (!Number.isFinite(providerTimeoutMs) || providerTimeoutMs <= 0) {
+    await releaseBeforeProvider();
+    return { ok: false, error: "rate_limited" };
+  }
 
   const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
+  let providerResponse: unknown;
+  let providerFailed = false;
+  let providerTimedOut = false;
+  const providerPromise = Promise.resolve().then(() =>
+    provider.generate(request, {
+      signal: controller.signal,
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
+    }),
+  );
   try {
-    const providerResponse = await Promise.race([
-      dependencies.provider.generate(request, {
-        signal: controller.signal,
-        maxOutputTokens: MAX_OUTPUT_TOKENS,
-      }),
+    providerResponse = await Promise.race([
+      providerPromise,
       new Promise<never>((_, reject) => {
         timeout = setTimeout(() => {
+          providerTimedOut = true;
           controller.abort();
           reject(new Error("timeout"));
-        }, dependencies.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+        }, providerTimeoutMs);
       }),
     ]);
-    const text = validateProviderResponse(providerResponse);
-    return text ? { ok: true, text } : { ok: false, error: "invalid_provider_response" };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error && error.message === "timeout" ? "timeout" : "provider_error",
-    };
+  } catch {
+    providerFailed = true;
   } finally {
     if (timeout !== undefined) clearTimeout(timeout);
   }
+
+  if (providerTimedOut) return { ok: false, error: "timeout" };
+
+  const settled = await settleAfterProvider();
+  if (!settled) return { ok: false, error: "rate_limited" };
+  if (providerFailed) return { ok: false, error: "provider_error" };
+
+  const text = validateProviderResponse(providerResponse);
+  return text ? { ok: true, text } : { ok: false, error: "invalid_provider_response" };
+}
+
+function isValidReservation(value: { status: "ok" } & NexusMentorQuotaReservation): boolean {
+  return (
+    value.status === "ok" &&
+    typeof value.reservationId === "string" &&
+    /^[A-Za-z0-9_-]{16,128}$/.test(value.reservationId) &&
+    Number.isSafeInteger(value.expiresAt) &&
+    value.expiresAt > Date.now() &&
+    typeof value.reservedCostUsd === "number" &&
+    Number.isFinite(value.reservedCostUsd) &&
+    value.reservedCostUsd > 0
+  );
 }

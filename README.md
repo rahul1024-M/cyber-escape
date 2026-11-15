@@ -36,10 +36,111 @@ Restart the Vite development server after changing the flag. The feature is neve
 The application uses TanStack Start with Nitro. `vite.config.ts` delegates the Nitro
 target to `@lovable.dev/vite-tanstack-config`; the current build generates a
 Cloudflare Worker module with `nodejs_compat` and a static asset binding. Run
-`npm run build` to produce the deployment output in `.output`. This workspace has
-no checked-in Wrangler deployment configuration or deploy script, so confirm the
-Cloudflare project, binding setup, and deployment command with the project owner
-before deploying. A successful local build is not a production deployment test.
+`npm run build` to produce the deployment output in `.output`. The separate
+`wrangler.staging.json` configuration targets the staging-only entry and uses no
+production route or account identifier. There is no production deployment
+configuration or deploy script. A successful local build is not a production
+deployment test.
+
+### NEXUS staging quota foundation
+
+The staging Worker wrapper exports a SQLite-backed `AiQuotaCoordinator` using
+Wrangler's current declarative `exports` class lifecycle setting. Its single
+globally named Durable Object serializes identity quota checks, in-flight limits,
+and daily cost reservations in one synchronous storage transaction.
+Minute and hour quotas use rolling windows; daily request and budget limits reset
+at 00:00 UTC. Accepted requests count toward request quotas even if a known
+pre-provider failure releases their cost reservation.
+
+An uncompleted reservation expires after two minutes. Its reserved amount is
+counted as spent on expiry, so an uncertain provider failure cannot repeatedly
+refund the daily budget. Expired records are cleaned lazily on the next
+coordinator operation. The staging hard budget is $1 per UTC day. The current
+$0.10 maximum reservation per request is only a conservative staging policy
+ceiling, not a Gemini cost estimate. Before enabling a provider, choose the
+model and supply its current input/output token prices and enforced token limits
+to calculate a true worst-case reservation. `AI_ENABLED` remains `false`.
+
+### NEXUS guest-session foundation
+
+Guest session helpers use a server-generated 192-bit guest ID and session ID in
+a versioned payload signed with HMAC-SHA-256. Verification uses Web Crypto
+signature verification and checks the configured audience, environment, issue
+time, and 12-hour maximum expiry. The signing key is read only from the Nitro
+Cloudflare request binding `GUEST_SESSION_SIGNING_SECRET`; it must be at least
+32 UTF-8 bytes.
+
+The `__Host-cyber-guest-session` cookie is HttpOnly, Secure, SameSite=Strict,
+host-only, and scoped to `/`. In particular, Secure is not weakened for local
+HTTP. Guest session issue/renew/logout handlers require the exact configured
+HTTPS origin and host, POST JSON, and same-origin Fetch Metadata when supplied.
+The application-origin binding is deliberately unset in staging until the
+authorized staging hostname is known, so these operations fail closed there.
+
+Guest issuance requires `GUEST_SESSIONS_ENABLED=true`, a `test` or `staging`
+session environment, a valid signing configuration, and complete Turnstile
+configuration. Turnstile verification sends the submitted token to Cloudflare's
+Siteverify endpoint from the server and requires a successful, fresh response
+whose hostname and action match the server bindings. `TURNSTILE_SECRET_KEY` is a
+server-only Cloudflare secret; `TURNSTILE_EXPECTED_HOSTNAME` and
+`TURNSTILE_EXPECTED_ACTION` are server configuration for creation;
+`TURNSTILE_RENEW_EXPECTED_ACTION` is a distinct server-configured action for
+renewal. Both operations require their own valid challenge before issuing a
+cookie. `TURNSTILE_SITE_KEY` is public and can be returned to a client only
+when issuance is fully configured. The challenge timestamp must use Cloudflare's
+ISO-8601 UTC timestamp format; Siteverify redirects fail closed.
+Siteverify receives a UUID idempotency key. Duplicate-token rejection follows
+Cloudflare's single-use validation behavior, which is eventually consistent and
+does not guarantee rejection of concurrent replays.
+
+Staging declares issuance disabled and has no expected hostname, site key, or
+secret configured. Do not enable staging issuance until the authorized hostname
+and widget configuration are supplied. Production issuance is not permitted by
+the current gate. Guest-session creation and renewal each require a verified
+Turnstile token, but no current client UI invokes the guest-session creation
+Server Function, so the official widget is not yet mounted in the application.
+Do not enable guest access until that UI integration is completed and verified.
+Supabase identities continue to come from server-verified claims and take
+precedence over a valid guest cookie.
+Only the resolved `guest:<id>` or `user:<sub>` identity and its type cross the
+Mentor authorization boundary. When a provider is deliberately configured and
+AI is enabled, the server reserves the configured worst-case request cost for
+that identity before authorization and provider execution. A pre-provider
+authorization failure releases only the cost reservation (not the accepted
+request count). Provider success, invalid output, and completed-but-uncertain
+failures settle the full reserved amount; they are not refunded without provider
+usage accounting. A timeout aborts the provider and leaves its reservation active
+until the coordinator expires and charges it, preserving the in-flight lock for
+the remainder of the lease. The provider timeout is capped before the
+coordinator's two-minute reservation expiry. The deployed Mentor still has
+`provider: null`, `AI_ENABLED=false`, and deny-all authorization, so it does not
+create reservations or make provider calls.
+
+Logout clears the browser cookie but does not revoke a copied stateless token.
+A copied token may be replayed until its expiry (up to 12 hours); the session ID
+rotation on renewal does not revoke the previous token. Immediate revocation
+requires a separately designed server-side revocation store.
+
+For isolated local Worker testing, build first and use a dedicated persistence
+directory; do not point Wrangler at production state. Prevent Wrangler from
+loading this repository's `.env` values. Do not keep production credentials in
+`.dev.vars`:
+
+```powershell
+$env:CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV = "false"
+$env:CLOUDFLARE_INCLUDE_PROCESS_ENV = "false"
+npm run build
+npx wrangler dev --local --config wrangler.staging.json --persist-to .wrangler/staging-test-5504
+Remove-Item Env:\CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV
+Remove-Item Env:\CLOUDFLARE_INCLUDE_PROCESS_ENV
+```
+
+```sh
+CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false CLOUDFLARE_INCLUDE_PROCESS_ENV=false npm run build
+CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false CLOUDFLARE_INCLUDE_PROCESS_ENV=false npx wrangler dev --local --config wrangler.staging.json --persist-to .wrangler/staging-test-5504
+```
+
+The local persistence directory is intentionally not reset by project scripts.
 
 Configure these values in the appropriate environment; never commit populated
 environment files:
@@ -78,4 +179,4 @@ external service and production checks are not established by the local build.
 - TypeScript
 - React
 - Tailwind CSS
-Supabase deployment is connected to the main branch.
+  Supabase deployment is connected to the main branch.

@@ -1,10 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   handleNexusMentorJson,
+  type NexusMentorIdentity,
   type NexusMentorDependencies,
   type NexusMentorProvider,
+  type NexusMentorQuotaOperations,
   type NexusMentorRequest,
 } from "./nexusMentor";
+import {
+  AI_QUOTA_RESERVATION_TTL_MS,
+  AiQuotaService,
+  createEmptyAiQuotaState,
+  type AiQuotaStateStore,
+  type PersistedAiQuotaState,
+} from "./aiQuota";
 
 const request: NexusMentorRequest = {
   sectorId: "sector-03",
@@ -14,15 +23,71 @@ const request: NexusMentorRequest = {
   mode: "teaching_hint",
 };
 
+function createQuotaMock(
+  overrides: Partial<NexusMentorQuotaOperations> = {},
+): NexusMentorQuotaOperations {
+  return {
+    reserve: vi.fn().mockResolvedValue({
+      status: "ok",
+      reservationId: "reservation-00000001",
+      expiresAt: Date.now() + AI_QUOTA_RESERVATION_TTL_MS,
+      reservedCostUsd: 0.1,
+    }),
+    settle: vi.fn().mockResolvedValue(true),
+    release: vi.fn().mockResolvedValue(true),
+    ...overrides,
+  };
+}
+
 function dependencies(overrides: Partial<NexusMentorDependencies> = {}): NexusMentorDependencies {
   return {
     provider: {
       generate: vi.fn().mockResolvedValue({ text: "Compare sender and reply domains." }),
     },
-    authenticate: vi.fn().mockResolvedValue("user-from-verified-session"),
-    allowRequest: vi.fn().mockResolvedValue(true),
+    isAiEnabled: () => true,
+    resolveIdentity: vi.fn().mockResolvedValue({
+      identity: "user:verified-user",
+      identityType: "user",
+    }),
+    quota: createQuotaMock(),
+    authorizeRequest: vi.fn().mockResolvedValue(true),
     timeoutMs: 20,
     ...overrides,
+  };
+}
+
+class MemoryQuotaStore implements AiQuotaStateStore {
+  private readonly state: PersistedAiQuotaState = createEmptyAiQuotaState();
+
+  transactionSync<T>(operation: (state: PersistedAiQuotaState) => T): T {
+    return operation(this.state);
+  }
+}
+
+function createServiceQuotaOperations(
+  requestCostUsd: number,
+  maxGlobalConcurrent = 5,
+): NexusMentorQuotaOperations {
+  const service = new AiQuotaService(
+    new MemoryQuotaStore(),
+    { maxRequestCostUsd: requestCostUsd, maxGlobalConcurrent },
+    Date.now,
+    (() => {
+      let sequence = 0;
+      return () => `reservation-${String(++sequence).padStart(8, "0")}`;
+    })(),
+  );
+  return {
+    reserve: async (identity) => {
+      const result = service.reserve(identity.identity, requestCostUsd);
+      return result.status === "ok"
+        ? { ...result, reservedCostUsd: requestCostUsd }
+        : { status: result.status === "denied" ? "denied" : "retry_later" };
+    },
+    settle: async (identity, reservationId, actualCostUsd) =>
+      service.settle(identity.identity, reservationId, actualCostUsd).status === "ok",
+    release: async (identity, reservationId) =>
+      service.release(identity.identity, reservationId, "provider_not_called").status === "ok",
   };
 }
 
@@ -70,7 +135,7 @@ describe("NEXUS mentor request validation", () => {
 
   it("rejects unexpected request fields", async () => {
     const result = await handleNexusMentorJson(
-      JSON.stringify({ ...request, correctAnswer: "secret-answer" }),
+      JSON.stringify({ ...request, userId: "forged-user-id" }),
       dependencies(),
     );
 
@@ -92,21 +157,40 @@ describe("NEXUS mentor request validation", () => {
 
 describe("NEXUS mentor provider boundary", () => {
   it("returns a clear not-configured response without checking auth or calling a provider", async () => {
-    const authenticate = vi.fn();
+    const resolveIdentity = vi.fn();
+    const reserve = vi.fn();
     const result = await handleNexusMentorJson(
       JSON.stringify(request),
-      dependencies({ provider: null, authenticate }),
+      dependencies({ provider: null, resolveIdentity, quota: createQuotaMock({ reserve }) }),
     );
 
     expect(result).toEqual({ ok: false, error: "not_configured" });
-    expect(authenticate).not.toHaveBeenCalled();
+    expect(resolveIdentity).not.toHaveBeenCalled();
+    expect(reserve).not.toHaveBeenCalled();
+  });
+
+  it("does not reserve when AI is disabled", async () => {
+    const reserve = vi.fn();
+    const provider = { generate: vi.fn() };
+    const result = await handleNexusMentorJson(
+      JSON.stringify(request),
+      dependencies({
+        provider,
+        isAiEnabled: () => false,
+        quota: createQuotaMock({ reserve }),
+      }),
+    );
+
+    expect(result).toEqual({ ok: false, error: "not_configured" });
+    expect(reserve).not.toHaveBeenCalled();
+    expect(provider.generate).not.toHaveBeenCalled();
   });
 
   it("requires a verified session before invoking a configured provider", async () => {
     const provider = { generate: vi.fn() };
     const result = await handleNexusMentorJson(
       JSON.stringify(request),
-      dependencies({ provider, authenticate: vi.fn().mockResolvedValue(null) }),
+      dependencies({ provider, resolveIdentity: vi.fn().mockResolvedValue(null) }),
     );
 
     expect(result).toEqual({ ok: false, error: "unauthorized" });
@@ -115,15 +199,249 @@ describe("NEXUS mentor provider boundary", () => {
 
   it("fails closed when the shared rate-limit dependency denies a user", async () => {
     const provider = { generate: vi.fn() };
-    const allowRequest = vi.fn().mockResolvedValue(false);
+    const authorizeRequest = vi.fn().mockResolvedValue(false);
+    const settle = vi.fn();
+    const release = vi.fn().mockResolvedValue(true);
     const result = await handleNexusMentorJson(
       JSON.stringify(request),
-      dependencies({ provider, allowRequest }),
+      dependencies({
+        provider,
+        authorizeRequest,
+        quota: createQuotaMock({ settle, release }),
+      }),
     );
 
     expect(result).toEqual({ ok: false, error: "rate_limited" });
-    expect(allowRequest).toHaveBeenCalledWith("user-from-verified-session");
+    expect(authorizeRequest).toHaveBeenCalledWith({
+      identity: "user:verified-user",
+      identityType: "user",
+    });
     expect(provider.generate).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledOnce();
+    expect(settle).not.toHaveBeenCalled();
+  });
+
+  it("reserves the trusted guest identity before authorization and provider execution", async () => {
+    const events: string[] = [];
+    const identity: NexusMentorIdentity = {
+      identity: "guest:guest-123",
+      identityType: "guest",
+    };
+    const provider = { generate: vi.fn().mockResolvedValue({ text: "Stay within the lab." }) };
+    provider.generate.mockImplementation(async () => {
+      events.push("provider");
+      return { text: "Stay within the lab." };
+    });
+    const reserve = vi.fn().mockImplementation(async (resolvedIdentity: NexusMentorIdentity) => {
+      events.push("reserve");
+      expect(resolvedIdentity).toEqual(identity);
+      return {
+        status: "ok",
+        reservationId: "reservation-00000001",
+        expiresAt: Date.now() + AI_QUOTA_RESERVATION_TTL_MS,
+        reservedCostUsd: 0.1,
+      };
+    });
+    const authorizeRequest = vi.fn().mockImplementation(async () => {
+      events.push("authorize");
+      return true;
+    });
+    const settle = vi.fn().mockImplementation(async () => {
+      events.push("settle");
+      return true;
+    });
+    const release = vi.fn();
+    const result = await handleNexusMentorJson(
+      JSON.stringify(request),
+      dependencies({
+        provider,
+        resolveIdentity: vi.fn().mockResolvedValue(identity),
+        authorizeRequest,
+        quota: createQuotaMock({ reserve, settle, release }),
+      }),
+    );
+
+    expect(result).toEqual({ ok: true, text: "Stay within the lab." });
+    expect(reserve).toHaveBeenCalledWith(identity);
+    expect(authorizeRequest).toHaveBeenCalledWith(identity);
+    expect(events).toEqual(["reserve", "authorize", "provider", "settle"]);
+    expect(settle).toHaveBeenCalledOnce();
+    expect(settle).toHaveBeenCalledWith(identity, "reservation-00000001", 0.1);
+    expect(release).not.toHaveBeenCalled();
+  });
+
+  it("reserves the exact trusted authenticated namespace", async () => {
+    const identity: NexusMentorIdentity = {
+      identity: "user:verified-user",
+      identityType: "user",
+    };
+    const reserve = vi.fn().mockResolvedValue({
+      status: "ok",
+      reservationId: "reservation-00000001",
+      expiresAt: Date.now() + AI_QUOTA_RESERVATION_TTL_MS,
+      reservedCostUsd: 0.1,
+    });
+    const result = await handleNexusMentorJson(
+      JSON.stringify(request),
+      dependencies({
+        resolveIdentity: vi.fn().mockResolvedValue(identity),
+        quota: createQuotaMock({ reserve }),
+      }),
+    );
+
+    expect(result).toEqual({ ok: true, text: "Compare sender and reply domains." });
+    expect(reserve).toHaveBeenCalledWith(identity);
+  });
+
+  it("rejects a browser-supplied identity before it can affect the reservation", async () => {
+    const reserve = vi.fn();
+    const result = await handleNexusMentorJson(
+      JSON.stringify({
+        ...request,
+        identity: "user:forged",
+        identityType: "user",
+      }),
+      dependencies({ quota: createQuotaMock({ reserve }) }),
+    );
+
+    expect(result).toEqual({ ok: false, error: "invalid_request" });
+    expect(reserve).not.toHaveBeenCalled();
+  });
+
+  it("does not execute the provider when reservation is denied or unavailable", async () => {
+    const provider = { generate: vi.fn() };
+    const reserve = vi.fn().mockResolvedValue({ status: "denied" });
+    const authorizeRequest = vi.fn();
+    const result = await handleNexusMentorJson(
+      JSON.stringify(request),
+      dependencies({
+        provider,
+        authorizeRequest,
+        quota: createQuotaMock({ reserve }),
+      }),
+    );
+
+    expect(result).toEqual({ ok: false, error: "rate_limited" });
+    expect(reserve).toHaveBeenCalledOnce();
+    expect(authorizeRequest).not.toHaveBeenCalled();
+    expect(provider.generate).not.toHaveBeenCalled();
+  });
+
+  it("releases an expired reservation before provider execution", async () => {
+    const identity: NexusMentorIdentity = {
+      identity: "user:verified-user",
+      identityType: "user",
+    };
+    const provider = { generate: vi.fn() };
+    const reserve = vi.fn().mockResolvedValue({
+      status: "ok",
+      reservationId: "reservation-00000001",
+      expiresAt: Date.now() - 1,
+      reservedCostUsd: 0.1,
+    });
+    const release = vi.fn().mockResolvedValue(false);
+    const result = await handleNexusMentorJson(
+      JSON.stringify(request),
+      dependencies({
+        provider,
+        resolveIdentity: vi.fn().mockResolvedValue(identity),
+        quota: createQuotaMock({ reserve, release }),
+      }),
+    );
+
+    expect(result).toEqual({ ok: false, error: "rate_limited" });
+    expect(release).toHaveBeenCalledOnce();
+    expect(release).toHaveBeenCalledWith(identity, "reservation-00000001");
+    expect(provider.generate).not.toHaveBeenCalled();
+  });
+
+  it("settles once after uncertain provider failure using the full reserved amount", async () => {
+    const identity: NexusMentorIdentity = {
+      identity: "user:verified-user",
+      identityType: "user",
+    };
+    const settle = vi.fn().mockResolvedValue(true);
+    const release = vi.fn();
+    const result = await handleNexusMentorJson(
+      JSON.stringify(request),
+      dependencies({
+        provider: { generate: vi.fn().mockRejectedValue(new Error("network uncertain")) },
+        quota: createQuotaMock({ settle, release }),
+      }),
+    );
+
+    expect(result).toEqual({ ok: false, error: "provider_error" });
+    expect(settle).toHaveBeenCalledOnce();
+    expect(settle).toHaveBeenCalledWith(identity, "reservation-00000001", 0.1);
+    expect(release).not.toHaveBeenCalled();
+  });
+
+  it("returns a safe denial if settlement fails and does not attempt a second cleanup", async () => {
+    const settle = vi.fn().mockResolvedValue(false);
+    const release = vi.fn();
+    const result = await handleNexusMentorJson(
+      JSON.stringify(request),
+      dependencies({
+        quota: createQuotaMock({ settle, release }),
+      }),
+    );
+
+    expect(result).toEqual({ ok: false, error: "rate_limited" });
+    expect(settle).toHaveBeenCalledOnce();
+    expect(release).not.toHaveBeenCalled();
+  });
+
+  it("applies real identity concurrency policy to concurrent Mentor requests", async () => {
+    const providerStarted: Array<() => void> = [];
+    const provider = {
+      generate: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            providerStarted.push(() => resolve({ text: "Concurrent response." }));
+          }),
+      ),
+    };
+    const deps = dependencies({
+      provider,
+      quota: createServiceQuotaOperations(0.1),
+    });
+    const first = handleNexusMentorJson(JSON.stringify(request), deps);
+    while (providerStarted.length === 0) await Promise.resolve();
+    const second = await handleNexusMentorJson(JSON.stringify(request), deps);
+
+    expect(second).toEqual({ ok: false, error: "rate_limited" });
+    expect(provider.generate).toHaveBeenCalledOnce();
+    providerStarted[0]?.();
+    await expect(first).resolves.toEqual({ ok: true, text: "Concurrent response." });
+  });
+
+  it("denies at the global budget before provider execution", async () => {
+    let identityIndex = 0;
+    const providerStarted: Array<() => void> = [];
+    const provider = {
+      generate: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            providerStarted.push(() => resolve({ text: "Budget response." }));
+          }),
+      ),
+    };
+    const deps = dependencies({
+      provider,
+      resolveIdentity: vi.fn(async (): Promise<NexusMentorIdentity> => ({
+        identity: `user:budget-${++identityIndex}`,
+        identityType: "user",
+      })),
+      quota: createServiceQuotaOperations(1),
+    });
+    const first = handleNexusMentorJson(JSON.stringify(request), deps);
+    while (providerStarted.length === 0) await Promise.resolve();
+    const second = await handleNexusMentorJson(JSON.stringify(request), deps);
+
+    expect(second).toEqual({ ok: false, error: "rate_limited" });
+    expect(provider.generate).toHaveBeenCalledOnce();
+    providerStarted[0]?.();
+    await expect(first).resolves.toEqual({ ok: true, text: "Budget response." });
   });
 
   it("maps provider exceptions to a safe error", async () => {
@@ -141,6 +459,8 @@ describe("NEXUS mentor provider boundary", () => {
   it("aborts a provider request after the configured timeout", async () => {
     vi.useFakeTimers();
     let capturedSignal: AbortSignal | undefined;
+    const settle = vi.fn().mockResolvedValue(true);
+    const release = vi.fn();
     const provider: NexusMentorProvider = {
       generate: vi.fn((_input, { signal }) => {
         capturedSignal = signal;
@@ -149,12 +469,18 @@ describe("NEXUS mentor provider boundary", () => {
     };
     const pending = handleNexusMentorJson(
       JSON.stringify(request),
-      dependencies({ provider, timeoutMs: 15 }),
+      dependencies({
+        provider,
+        timeoutMs: 15,
+        quota: createQuotaMock({ settle, release }),
+      }),
     );
     await vi.advanceTimersByTimeAsync(15);
 
     await expect(pending).resolves.toEqual({ ok: false, error: "timeout" });
     expect(capturedSignal?.aborted).toBe(true);
+    expect(settle).not.toHaveBeenCalled();
+    expect(release).not.toHaveBeenCalled();
   });
 
   it.each([

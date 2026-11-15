@@ -1,0 +1,38 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "rahul1024-m-cyber-escape-staging",
+  "main": "worker.staging.mjs",
+  "compatibility_date": "2026-11-13",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "assets": {
+    "directory": ".output/public",
+    "binding": "ASSETS"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "AI_QUOTA_COORDINATOR",
+        "class_name": "AiQuotaCoordinator"
+      }
+    ]
+  },
+  "exports": {
+    "AiQuotaCoordinator": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  },
+  "vars": {
+    "AI_ENABLED": "false",
+    "AI_MAX_REQUEST_COST_USD": "0.1",
+    "AI_MAX_GLOBAL_CONCURRENT": "5",
+    "GUEST_SESSIONS_ENABLED": "false",
+    "GUEST_SESSION_AUDIENCE": "cyber-escape-staging",
+    "GUEST_SESSION_ENVIRONMENT": "staging",
+    "TURNSTILE_EXPECTED_ACTION": "guest_session_create",
+    "TURNSTILE_RENEW_EXPECTED_ACTION": "guest_session_renew",
+    "SUPABASE_URL" : "https://dlvgjvdnxekghdcvtrfq.supabase.co/rest/v1/",
+"SUPABASE_PUBLISHABLE_KEY": "sb_publishable_BMW795eDmG_fpTMmW2lTJA_Q13dAeWU"
+  }
+}
