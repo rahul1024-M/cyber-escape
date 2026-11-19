@@ -22,6 +22,17 @@ const request: NexusMentorRequest = {
   question: "What makes the reply-to address suspicious?",
   mode: "teaching_hint",
 };
+const validUsage = {
+  promptTokenCount: 120,
+  candidatesTokenCount: 18,
+  thoughtsTokenCount: 0,
+  cachedContentTokenCount: 0,
+  totalTokenCount: 138,
+};
+
+function providerResult(text: string) {
+  return { text, usage: validUsage };
+}
 
 function createQuotaMock(
   overrides: Partial<NexusMentorQuotaOperations> = {},
@@ -42,7 +53,9 @@ function createQuotaMock(
 function dependencies(overrides: Partial<NexusMentorDependencies> = {}): NexusMentorDependencies {
   return {
     provider: {
-      generate: vi.fn().mockResolvedValue({ text: "Compare sender and reply domains." }),
+               generate: vi.fn().mockResolvedValue(
+  providerResult("Compare sender and reply domains."),
+),
     },
     isAiEnabled: () => true,
     resolveIdentity: vi.fn().mockResolvedValue({
@@ -98,7 +111,7 @@ afterEach(() => {
 describe("NEXUS mentor request validation", () => {
   it("accepts the allowlisted request and sanitizes user text", async () => {
     const provider: NexusMentorProvider = {
-      generate: vi.fn().mockResolvedValue({ text: "Check the reply-to domain." }),
+      generate: vi.fn().mockResolvedValue(providerResult("Check the reply-to domain.")),
     };
     const result = await handleNexusMentorJson(
       JSON.stringify({ ...request, question: "  Compare <reply-to> fields.\n" }),
@@ -227,11 +240,16 @@ describe("NEXUS mentor provider boundary", () => {
       identity: "guest:guest-123",
       identityType: "guest",
     };
-    const provider = { generate: vi.fn().mockResolvedValue({ text: "Stay within the lab." }) };
-    provider.generate.mockImplementation(async () => {
-      events.push("provider");
-      return { text: "Stay within the lab." };
-    });
+   const provider = {
+  generate: vi.fn().mockResolvedValue(
+    providerResult("Stay within the lab."),
+  ),
+};
+
+provider.generate.mockImplementation(async () => {
+  events.push("provider");
+  return providerResult("Stay within the lab.");
+});
     const reserve = vi.fn().mockImplementation(async (resolvedIdentity: NexusMentorIdentity) => {
       events.push("reserve");
       expect(resolvedIdentity).toEqual(identity);
@@ -266,7 +284,7 @@ describe("NEXUS mentor provider boundary", () => {
     expect(authorizeRequest).toHaveBeenCalledWith(identity);
     expect(events).toEqual(["reserve", "authorize", "provider", "settle"]);
     expect(settle).toHaveBeenCalledOnce();
-    expect(settle).toHaveBeenCalledWith(identity, "reservation-00000001", 0.1);
+    expect(settle).toHaveBeenCalledWith(identity, "reservation-00000001", 0.000057);
     expect(release).not.toHaveBeenCalled();
   });
 
@@ -397,7 +415,7 @@ describe("NEXUS mentor provider boundary", () => {
       generate: vi.fn(
         () =>
           new Promise((resolve) => {
-            providerStarted.push(() => resolve({ text: "Concurrent response." }));
+            providerStarted.push(() => resolve(providerResult("Concurrent response.")));
           }),
       ),
     };
@@ -422,7 +440,7 @@ describe("NEXUS mentor provider boundary", () => {
       generate: vi.fn(
         () =>
           new Promise((resolve) => {
-            providerStarted.push(() => resolve({ text: "Budget response." }));
+            providerStarted.push(() => resolve(providerResult("Budget response.")));
           }),
       ),
     };

@@ -2,9 +2,20 @@
 import type { NexusMentorProvider } from "@/game/nexusMentor";
 import { getAiServerBindings } from "./cloudflareBindings.server";
 
-const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
-const GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/";
+const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
+const GEMINI_API_BASE_URL =
+  "https://generativelanguage.googleapis.com/v1beta/models/";
+
 const MAX_PROVIDER_RESPONSE_BYTES = 8192;
+const MAX_ALLOWED_OUTPUT_TOKENS = 384;
+
+interface GeminiUsageMetadata {
+  promptTokenCount: number;
+  candidatesTokenCount: number;
+  totalTokenCount: number;
+  thoughtsTokenCount?: number;
+  cachedContentTokenCount?: number;
+}
 
 interface GeminiGenerateResponse {
   candidates?: Array<{
@@ -15,13 +26,105 @@ interface GeminiGenerateResponse {
     };
     finishReason?: string;
   }>;
-  error?: {
-    message?: string;
-  };
+  usageMetadata?: GeminiUsageMetadata;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+  );
+}
+
+function isTokenCount(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 0
+  );
+}
+
+function validateUsageMetadata(
+  value: unknown,
+): GeminiUsageMetadata | null {
+  if (!isRecord(value)) return null;
+
+  const prompt = value["promptTokenCount"];
+  const candidates = value["candidatesTokenCount"];
+  const total = value["totalTokenCount"];
+  const thoughts = value["thoughtsTokenCount"] ?? 0;
+  const cached = value["cachedContentTokenCount"] ?? 0;
+
+  if (
+    !isTokenCount(prompt) ||
+    !isTokenCount(candidates) ||
+    !isTokenCount(total) ||
+    !isTokenCount(thoughts) ||
+    !isTokenCount(cached)
+  ) {
+    return null;
+  }
+
+  if (cached !== 0) return null;
+
+  if (total < prompt + candidates + thoughts) {
+    return null;
+  }
+
+  return {
+    promptTokenCount: prompt,
+    candidatesTokenCount: candidates,
+    totalTokenCount: total,
+    thoughtsTokenCount: thoughts,
+    cachedContentTokenCount: cached,
+  };
+}
+
+async function readBoundedResponse(
+  response: Response,
+  maxBytes: number,
+): Promise<string> {
+  const contentLength = response.headers.get("content-length");
+
+  if (contentLength !== null) {
+    if (!/^\d+$/.test(contentLength) || Number(contentLength) > maxBytes) {
+      throw new Error("Gemini response exceeded the permitted size.");
+    }
+  }
+
+  if (!response.body) {
+    throw new Error("Gemini returned an empty response body.");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytesRead = 0;
+  let result = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) break;
+
+      bytesRead += value.byteLength;
+
+      if (bytesRead > maxBytes) {
+        await reader.cancel();
+        throw new Error(
+          "Gemini response exceeded the permitted size.",
+        );
+      }
+
+      result += decoder.decode(value, { stream: true });
+    }
+
+    result += decoder.decode();
+    return result;
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 export const geminiNexusMentorProvider: NexusMentorProvider = {
@@ -35,8 +138,16 @@ export const geminiNexusMentorProvider: NexusMentorProvider = {
 
     const model = bindings.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL;
 
-    if (!/^[A-Za-z0-9._-]{1,100}$/.test(model)) {
-      throw new Error("Invalid Gemini model configuration.");
+    if (model !== DEFAULT_GEMINI_MODEL) {
+      throw new Error("Unsupported Gemini model configuration.");
+    }
+
+    if (
+      !Number.isSafeInteger(options.maxOutputTokens) ||
+      options.maxOutputTokens < 1 ||
+      options.maxOutputTokens > MAX_ALLOWED_OUTPUT_TOKENS
+    ) {
+      throw new Error("Invalid Gemini output token limit.");
     }
 
     const endpoint =
@@ -76,14 +187,10 @@ export const geminiNexusMentorProvider: NexusMentorProvider = {
       }),
     });
 
-    const responseText = await response.text();
-
-    if (
-      new TextEncoder().encode(responseText).byteLength >
-      MAX_PROVIDER_RESPONSE_BYTES
-    ) {
-      throw new Error("Gemini response exceeded the permitted size.");
-    }
+    const responseText = await readBoundedResponse(
+      response,
+      MAX_PROVIDER_RESPONSE_BYTES,
+    );
 
     let payload: unknown;
 
@@ -105,7 +212,12 @@ export const geminiNexusMentorProvider: NexusMentorProvider = {
 
     const data = payload as GeminiGenerateResponse;
     const candidate = data.candidates?.[0];
-    const parts = candidate?.content?.parts;
+
+    if (!candidate || candidate.finishReason !== "STOP") {
+      throw new Error("Gemini did not complete the response normally.");
+    }
+
+    const parts = candidate.content?.parts;
 
     if (!Array.isArray(parts)) {
       throw new Error("Gemini returned no response content.");
@@ -120,6 +232,15 @@ export const geminiNexusMentorProvider: NexusMentorProvider = {
       throw new Error("Gemini returned empty response content.");
     }
 
-    return { text };
+    const usage = validateUsageMetadata(data.usageMetadata);
+
+    if (!usage) {
+      throw new Error("Gemini returned invalid token usage metadata.");
+    }
+
+    return {
+      text,
+      usage,
+    };
   },
 };

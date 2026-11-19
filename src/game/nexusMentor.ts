@@ -81,6 +81,9 @@ const MAX_DESCRIPTION_CHARS = 240;
 const MAX_QUESTION_CHARS = 400;
 const MAX_RESPONSE_CHARS = 1600;
 const MAX_OUTPUT_TOKENS = 384;
+const MAX_PROMPT_TOKENS = 8192;
+const GEMINI_INPUT_PRICE_PER_MILLION = 0.25;
+const GEMINI_OUTPUT_PRICE_PER_MILLION = 1.5;
 const DEFAULT_TIMEOUT_MS = 8000;
 const RESERVATION_EXPIRY_SAFETY_MS = 1000;
 const REQUEST_KEYS = ["sectorId", "missionDescription", "stage", "question", "mode"];
@@ -131,10 +134,81 @@ export function validateNexusMentorRequest(value: unknown): NexusMentorRequest |
   };
 }
 
-function validateProviderResponse(value: unknown): string | null {
-  if (!isRecord(value) || Object.keys(value).length !== 1 || !Object.hasOwn(value, "text")) {
+
+function getProviderActualCostUsd(value: unknown): number | null {
+  if (!isRecord(value) || !isRecord(value["usage"])) return null;
+
+  const usage = value["usage"];
+  const allowedKeys = [
+    "promptTokenCount",
+    "candidatesTokenCount",
+    "thoughtsTokenCount",
+    "cachedContentTokenCount",
+    "totalTokenCount",
+  ];
+
+  if (Object.keys(usage).some((key) => !allowedKeys.includes(key))) {
     return null;
   }
+
+  const promptTokens = usage["promptTokenCount"];
+  const candidateTokens = usage["candidatesTokenCount"];
+  const thoughtsTokens = usage["thoughtsTokenCount"] ?? 0;
+  const cachedTokens = usage["cachedContentTokenCount"] ?? 0;
+  const totalTokens = usage["totalTokenCount"];
+
+  const counts = [
+    promptTokens,
+    candidateTokens,
+    thoughtsTokens,
+    cachedTokens,
+    totalTokens,
+  ];
+
+  if (!counts.every(
+    (count) =>
+      typeof count === "number" &&
+      Number.isSafeInteger(count) &&
+      count >= 0,
+  )) {
+    return null;
+  }
+
+  if (
+    (promptTokens as number) > MAX_PROMPT_TOKENS ||
+    (candidateTokens as number) + (thoughtsTokens as number) >
+      MAX_OUTPUT_TOKENS ||
+    (cachedTokens as number) !== 0 ||
+    (totalTokens as number) !==
+      (promptTokens as number) +
+        (candidateTokens as number) +
+        (thoughtsTokens as number)
+  ) {
+    return null;
+  }
+
+  const inputCost =
+    (promptTokens as number) * GEMINI_INPUT_PRICE_PER_MILLION;
+  const outputCost =
+    ((candidateTokens as number) + (thoughtsTokens as number)) *
+    GEMINI_OUTPUT_PRICE_PER_MILLION;
+
+  const cost = (inputCost + outputCost) / 1_000_000;
+
+  return Number.isFinite(cost) && cost >= 0 ? cost : null;
+}
+
+function validateProviderResponse(value: unknown): string | null {
+  if (
+    !isRecord(value) ||
+    Object.keys(value).length !== 2 ||
+    !Object.hasOwn(value, "text") ||
+    !Object.hasOwn(value, "usage") ||
+    getProviderActualCostUsd(value) === null
+  ) {
+    return null;
+  }
+
   if (
     typeof value["text"] !== "string" ||
     value["text"].length > MAX_RESPONSE_CHARS ||
@@ -142,6 +216,7 @@ function validateProviderResponse(value: unknown): string | null {
   ) {
     return null;
   }
+
   const text = sanitizeText(value["text"]);
   return text ? text.slice(0, MAX_RESPONSE_CHARS) : null;
 }
@@ -224,19 +299,22 @@ export async function handleNexusMentorJson(
       return false;
     }
   };
-  const settleAfterProvider = async (): Promise<boolean> => {
-    if (cleanupStarted) return false;
-    cleanupStarted = true;
-    try {
-      return await dependencies.quota.settle(
-        identity,
-        reservation.reservationId,
-        reservation.reservedCostUsd,
-      );
-    } catch {
-      return false;
-    }
-  };
+const settleAfterProvider = async (
+  actualCostUsd = reservation.reservedCostUsd,
+): Promise<boolean> => {
+  if (cleanupStarted) return false;
+  cleanupStarted = true;
+
+  try {
+    return await dependencies.quota.settle(
+      identity,
+      reservation.reservationId,
+      actualCostUsd,
+    );
+  } catch {
+    return false;
+  }
+};
 
   let authorized: boolean;
   try {
@@ -289,11 +367,16 @@ export async function handleNexusMentorJson(
     if (timeout !== undefined) clearTimeout(timeout);
   }
 
-  if (providerTimedOut) return { ok: false, error: "timeout" };
+ if (providerTimedOut) return { ok: false, error: "timeout" };
 
-  const settled = await settleAfterProvider();
-  if (!settled) return { ok: false, error: "rate_limited" };
-  if (providerFailed) return { ok: false, error: "provider_error" };
+const actualCostUsd = providerFailed
+  ? reservation.reservedCostUsd
+  : getProviderActualCostUsd(providerResponse) ??
+    reservation.reservedCostUsd;
+
+const settled = await settleAfterProvider(actualCostUsd);
+if (!settled) return { ok: false, error: "rate_limited" };
+if (providerFailed) return { ok: false, error: "provider_error" };
 
   const text = validateProviderResponse(providerResponse);
   return text ? { ok: true, text } : { ok: false, error: "invalid_provider_response" };

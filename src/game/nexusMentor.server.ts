@@ -138,14 +138,23 @@ async function reserveNexusMentorQuota(
   }
 }
 
-export async function resolveNexusMentorIdentity() {
-  const verifiedSubject = await getAuthenticatedUserId();
 
-  if (verifiedSubject !== null) {
+export async function resolveNexusMentorIdentity() {
+  const request = getRequest();
+  const authorization = request.headers.get("authorization");
+
+  // If authentication was attempted, never downgrade to guest.
+  if (authorization !== null) {
+    if (!authorization.startsWith("Bearer ")) return null;
+
+    const verifiedSubject = await getAuthenticatedUserId();
+
+    if (verifiedSubject === null) return null;
+
     return resolveNexusIdentity(verifiedSubject, null);
   }
 
-  const request = getRequest();
+  // No Authorization header: guest identity may be used.
   const bindings = getAiServerBindings();
 
   const token = readGuestSessionCookie(
@@ -162,6 +171,7 @@ export async function resolveNexusMentorIdentity() {
 
   return resolveNexusIdentity(null, guestSession);
 }
+
 
 export function getNexusMentorRequestContentLength(): string | null {
   return getRequest().headers.get("content-length");
